@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts"
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "send-dm": "tsx --env-file-if-exists=.env scripts/send-dm.ts",
+    "mock-backend": "tsx --env-file-if-exists=.env scripts/mock-backend.ts"
   },
   "dependencies": {
     "spectrum-ts": "^12.16.0"
@@ -14,5 +18,8 @@
     "typescript": "^5",
     "@types/node": "^22",
     "tsx": "^4"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
