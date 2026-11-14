@@ -18,7 +18,9 @@ BOB = "+15550002222"
 GW = {"X-Gateway-Secret": GATEWAY_SECRET}
 
 GAME = dict(team="ASU", opponent="Texas Tech")
-READBACK = "Got it: a bet on ASU vs Texas Tech. Next I will look up the game."
+# Chunk 3: a valid request is looked up right away; the offer replaces the old readback.
+READBACK = "I found Texas Tech at Arizona State, Saturday Nov 21, 7:30 PM MST. Is this the game? Reply YES or NO."
+OFFER_CARDS = "I found Seattle Seahawks at Arizona Cardinals, Sunday Nov 15, 2:05 PM MST. Is this the game? Reply YES or NO."
 
 
 @pytest.fixture
@@ -51,11 +53,11 @@ def chat(client, fake_gateway, roster):
     return Chat(client, fake_gateway)
 
 
-async def test_complete_request_reads_back_and_marks_ready(chat, extractor, repo):
+async def test_complete_request_is_looked_up(chat, extractor, repo):
     extractor.push(**GAME)
     assert await chat.say("create a bet for asu vs texas tech") == READBACK
     d = await repo.get_draft(ALICE)
-    assert d.status == "ready" and d.pending_field is None
+    assert d.status == "collecting" and d.pending_field == "confirm" and len(d.candidates) == 1
     assert d.fields == {"team": "ASU", "opponent": "Texas Tech", "date": None}
     assert extractor.calls[0]["today"] == TODAY and extractor.calls[0]["tz"] == "America/Phoenix"
     assert extractor.calls[0]["pending_field"] is None
@@ -69,27 +71,27 @@ async def test_no_game_asks_then_pending_answer_is_merged(chat, extractor, repo)
     extractor.push("reply_to_pending", **GAME)
     assert await chat.say("ASU vs Texas Tech") == READBACK
     assert extractor.calls[1]["pending_field"] == "team"
-    assert (await repo.get_draft(ALICE)).status == "ready"
+    assert (await repo.get_draft(ALICE)).pending_field == "confirm"
 
 
 async def test_pending_answer_keeps_earlier_date(chat, extractor):
     tomorrow = (TODAY + timedelta(days=1)).isoformat()
     extractor.push(date=tomorrow)  # "make a bet for tomorrow"
     assert await chat.say() == T.ASK_GAME
-    extractor.push("reply_to_pending", team="suns")
-    assert await chat.say("suns") == "Got it: a bet on suns vs the other team, on Sunday Nov 15. Next I will look up the game."
+    extractor.push("reply_to_pending", team="cardinals")
+    assert await chat.say("cardinals") == OFFER_CARDS
 
 
 async def test_team_only(chat, extractor):
     extractor.push(team="ASU")
-    assert await chat.say("bet on ASU") == "Got it: a bet on ASU vs the other team. Next I will look up the game."
+    reply = await chat.say("bet on ASU")
+    assert reply.startswith("I found these games:\n1. BYU at Arizona State, Tuesday Nov 17")
+    assert reply.endswith("Reply with a number, or NO.")
 
 
 async def test_relative_date_resolved_by_model(chat, extractor):
-    extractor.push(team="suns", date=(TODAY + timedelta(days=1)).isoformat())
-    assert await chat.say("make me a bet on the suns game tomorrow") == (
-        "Got it: a bet on suns vs the other team, on Sunday Nov 15. Next I will look up the game."
-    )
+    extractor.push(team="cards", date=(TODAY + timedelta(days=1)).isoformat())
+    assert await chat.say("make me a bet on the cards game tomorrow") == OFFER_CARDS
 
 
 @pytest.mark.parametrize("delta", [-1, -7, 15])
@@ -99,8 +101,8 @@ async def test_date_outside_window_is_reasked(chat, extractor, repo, delta):
     d = await repo.get_draft(ALICE)
     assert d.status == "collecting" and d.pending_field == "date" and d.fields["date"] is None
     assert d.fields["team"] == "ASU"
-    extractor.push("reply_to_pending", date=(TODAY + timedelta(days=2)).isoformat())
-    assert await chat.say("monday") == "Got it: a bet on ASU vs Texas Tech, on Monday Nov 16. Next I will look up the game."
+    extractor.push("reply_to_pending", date=(TODAY + timedelta(days=7)).isoformat())
+    assert await chat.say("next saturday") == READBACK
 
 
 async def test_phone_number_team_is_rejected(chat, extractor, fake_gateway):
@@ -115,9 +117,11 @@ async def test_replace_yes_while_collecting(chat, extractor, repo):
     extractor.push(team="UofA", opponent="ASU")
     assert await chat.say("bet on uofa vs asu") == T.REPLACE_ASK
     assert len(extractor.calls) == 2
-    assert await chat.say("YES") == "Got it: a bet on UofA vs ASU. Next I will look up the game."
+    assert await chat.say("YES") == (
+        "I found Arizona State at Arizona Wildcats, Friday Nov 27, 8:00 PM MST. Is this the game? Reply YES or NO."
+    )
     assert len(extractor.calls) == 2  # YES/NO parsed without the model
-    assert (await repo.get_draft(ALICE)).status == "ready"
+    assert (await repo.get_draft(ALICE)).pending_field == "confirm"
 
 
 async def test_replace_no_keeps_old_and_reasks(chat, extractor, repo):
@@ -139,12 +143,12 @@ async def test_replace_unclear_answer(chat, extractor):
     assert len(extractor.calls) == 2
 
 
-async def test_ready_draft_is_replaced_without_asking(chat, extractor, repo):
+async def test_confirmed_bet_lets_next_request_start_fresh(chat, extractor, repo):
     extractor.push(**GAME)
     assert await chat.say() == READBACK
-    extractor.push(team="suns", opponent="lakers")
-    assert await chat.say() == "Got it: a bet on suns vs lakers. Next I will look up the game."
-    assert (await repo.get_draft(ALICE)).fields["team"] == "suns"
+    assert (await chat.say("yes")).startswith("Game confirmed:")
+    extractor.push(team="cardinals")
+    assert await chat.say() == OFFER_CARDS  # no replace question: the confirmed bet is not a draft
 
 
 async def test_draft_expires_after_30_minutes(chat, extractor, repo, clock):
@@ -232,7 +236,7 @@ async def test_drafts_are_per_sender(chat, extractor, repo):
 async def test_logs_have_no_field_values_at_info(roster, extractor, settings, repo, gateway):
     lines: list[str] = []
     app = create_app(settings, repo=repo, gateway=gateway, logger=Logger("info", write=lines.append), extractor=extractor)
-    extractor.push(team="Wildcats", opponent="Sun Devils")
+    extractor.push(team="Wildcats", opponent="Sun Devils")  # resolves to UofA vs ASU
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         await c.post("/inbound", json={"messageId": "q", "handle": ALICE, "text": "secret bet text", "receivedAt": "2026-11-14T19:00:00Z"}, headers=GW)
     blob = "\n".join(lines)

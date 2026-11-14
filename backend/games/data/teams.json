@@ -1,0 +1,21 @@
+{
+  "_doc": "Team directory for the alias normalizer. id is canonical and stable (used in game ids and the bets table). name is shown to users. aliases are matched case-insensitively after removing punctuation and a leading 'the'; a trailing 's' is tolerated either way. An alias shared by several teams (e.g. 'arizona') makes lookups offer all of them. To add a team, append an object; to add a nickname, append to aliases.",
+  "teams": [
+    {"id": "nfl-ari", "league": "nfl", "name": "Arizona Cardinals", "aliases": ["cardinals", "cards", "arizona cardinals", "birds", "ari", "arizona", "az cardinals"]},
+    {"id": "nfl-kc", "league": "nfl", "name": "Kansas City Chiefs", "aliases": ["chiefs", "kc", "kansas city", "kc chiefs"]},
+    {"id": "nfl-phi", "league": "nfl", "name": "Philadelphia Eagles", "aliases": ["eagles", "philly", "philadelphia", "phi", "birds of philly"]},
+    {"id": "nfl-dal", "league": "nfl", "name": "Dallas Cowboys", "aliases": ["cowboys", "dallas", "dal", "boys", "americas team"]},
+    {"id": "nfl-sf", "league": "nfl", "name": "San Francisco 49ers", "aliases": ["49ers", "niners", "sf", "san francisco", "forty niners", "9ers"]},
+    {"id": "nfl-buf", "league": "nfl", "name": "Buffalo Bills", "aliases": ["bills", "buffalo", "buf"]},
+    {"id": "nfl-bal", "league": "nfl", "name": "Baltimore Ravens", "aliases": ["ravens", "baltimore", "bal"]},
+    {"id": "nfl-lar", "league": "nfl", "name": "Los Angeles Rams", "aliases": ["rams", "la rams", "lar"]},
+    {"id": "nfl-sea", "league": "nfl", "name": "Seattle Seahawks", "aliases": ["seahawks", "seattle", "sea", "hawks"]},
+    {"id": "nfl-pit", "league": "nfl", "name": "Pittsburgh Steelers", "aliases": ["steelers", "pittsburgh", "pit"]},
+    {"id": "nfl-den", "league": "nfl", "name": "Denver Broncos", "aliases": ["broncos", "denver", "den"]},
+    {"id": "nfl-nyg", "league": "nfl", "name": "New York Giants", "aliases": ["giants", "ny giants", "nyg"]},
+    {"id": "ncaaf-asu", "league": "ncaaf", "name": "Arizona State", "aliases": ["asu", "sun devils", "arizona state", "arizona state sun devils", "arizona"]},
+    {"id": "ncaaf-ttu", "league": "ncaaf", "name": "Texas Tech", "aliases": ["texas tech", "ttu", "red raiders", "tech"]},
+    {"id": "ncaaf-ariz", "league": "ncaaf", "name": "Arizona Wildcats", "aliases": ["uofa", "u of a", "ua", "wildcats", "arizona wildcats", "university of arizona", "arizona"]},
+    {"id": "ncaaf-byu", "league": "ncaaf", "name": "BYU", "aliases": ["byu", "cougars", "brigham young"]}
+  ]
+}

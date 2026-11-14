@@ -29,8 +29,11 @@ from app.logging import Logger
 from app.main import create_app
 from app.repository import Repository
 from extraction.schema import Extraction
+from games.simulated import SimulatedProvider
+from games.teams import TeamDirectory
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+TEST_SCHEDULE = Path(__file__).resolve().parent / "fixtures" / "schedule_test.json"
 GATEWAY_SECRET = "test-gateway-secret"
 ADMIN_SECRET = "test-admin-secret"
 
@@ -201,7 +204,17 @@ def extractor() -> FakeExtractor:
 
 
 @pytest.fixture
-async def client(settings, repo, gateway, logs, extractor, clock):
-    app = create_app(settings, repo=repo, gateway=gateway, logger=logs.logger, extractor=extractor, now=clock)
+async def client(settings, repo, gateway, logs, extractor, clock, provider):
+    app = create_app(
+        settings, repo=repo, gateway=gateway, logger=logs.logger, extractor=extractor, provider=provider, now=clock
+    )
+    app.state.test_provider = provider
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://backend.test") as c:
         yield c
+
+
+@pytest.fixture
+async def provider(repo, clock):
+    p = SimulatedProvider(repo, TeamDirectory.from_file(), "America/Phoenix", now=clock, schedule_file=TEST_SCHEDULE)
+    await p.seed_if_empty()
+    return p

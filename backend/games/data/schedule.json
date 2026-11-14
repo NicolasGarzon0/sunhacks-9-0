@@ -1,0 +1,18 @@
+{
+  "_doc": "Simulated schedule. Each game: key (unique, becomes game_id 'sim:<key>'), league, away and home (team ids from teams.json), local_time 'HH:MM' in LOCAL_TIMEZONE, and EITHER day_offset (days from today, 0 = today) OR weekday (next occurrence 1-7 days ahead). Kickoffs are computed when the schedule is seeded: on first start with an empty sim_games table, or on POST /admin/games/reset. Keep everything within 14 days so lookups find it.",
+  "games": [
+    {"key": "nfl-lar-sea-early", "league": "nfl", "away": "nfl-lar", "home": "nfl-sea", "day_offset": 0, "local_time": "00:05"},
+    {"key": "nfl-dal-phi", "league": "nfl", "away": "nfl-dal", "home": "nfl-phi", "day_offset": 1, "local_time": "11:00"},
+    {"key": "nfl-sea-ari", "league": "nfl", "away": "nfl-sea", "home": "nfl-ari", "day_offset": 1, "local_time": "14:05"},
+    {"key": "nfl-bal-pit", "league": "nfl", "away": "nfl-bal", "home": "nfl-pit", "day_offset": 2, "local_time": "18:15"},
+    {"key": "ncaaf-byu-asu", "league": "ncaaf", "away": "ncaaf-byu", "home": "ncaaf-asu", "day_offset": 3, "local_time": "17:00"},
+    {"key": "nfl-sf-lar", "league": "nfl", "away": "nfl-sf", "home": "nfl-lar", "day_offset": 5, "local_time": "18:15"},
+    {"key": "nfl-buf-kc", "league": "nfl", "away": "nfl-buf", "home": "nfl-kc", "weekday": "friday", "local_time": "18:15"},
+    {"key": "ncaaf-ttu-asu", "league": "ncaaf", "away": "ncaaf-ttu", "home": "ncaaf-asu", "day_offset": 7, "local_time": "19:30"},
+    {"key": "nfl-buf-bal", "league": "nfl", "away": "nfl-buf", "home": "nfl-bal", "day_offset": 8, "local_time": "11:00"},
+    {"key": "nfl-nyg-sf", "league": "nfl", "away": "nfl-nyg", "home": "nfl-sf", "day_offset": 8, "local_time": "14:25"},
+    {"key": "nfl-kc-den", "league": "nfl", "away": "nfl-kc", "home": "nfl-den", "day_offset": 10, "local_time": "14:25"},
+    {"key": "nfl-phi-dal", "league": "nfl", "away": "nfl-phi", "home": "nfl-dal", "day_offset": 12, "local_time": "18:20"},
+    {"key": "ncaaf-asu-ariz", "league": "ncaaf", "away": "ncaaf-asu", "home": "ncaaf-ariz", "day_offset": 13, "local_time": "20:00"}
+  ]
+}

@@ -1,4 +1,4 @@
-# Handshake Bets backend (chunks 1-2: skeleton + bet extraction)
+# Handshake Bets backend (chunks 1-3: skeleton, bet extraction, game lookup)
 
 FastAPI service that receives iMessage DMs from the gateway (`../src`, contract in `../docs/imessage-gateway.md`),
 dedups them in Postgres, looks the sender up in a demo roster, and replies through the gateway's `POST /send`.
@@ -31,6 +31,8 @@ The backend reads the repo-root `.env`, shared with the gateway (see the root `.
 | `ANTHROPIC_API_KEY` | yes | Haiku extraction; never logged |
 | `HAIKU_MODEL` | no | default `claude-haiku-5-5` (current Haiku model ID) |
 | `LOCAL_TIMEZONE` | no | default `America/Phoenix`; used to resolve "tomorrow", "Saturday", etc. |
+| `GAME_PROVIDER` | no | `simulated` (default) or `realtime` |
+| `SPORTS_API_KEY` | only if realtime | realtimesportsapi.com key; never logged |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | not yet | reserved for later chunks; never logged |
 
 Startup fails with a message naming every missing required variable.
@@ -38,8 +40,8 @@ Startup fails with a message naming every missing required variable.
 ## Database
 Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` in order in the
 Supabase SQL editor (or via the Supabase MCP): `0001_init` (inbound_messages, roster), `0002_drafts`
-(one bet request draft per sender handle) and `0003_drafts_game_only` (status `collecting|ready`, pending
-field `team|date`). All tables have RLS enabled with no policies, so the
+(one bet request draft per sender handle) `0003_drafts_game_only` (status `collecting|ready`, pending
+field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`). All tables have RLS enabled with no policies, so the
 anon/authenticated API keys see nothing; the backend connects as the table owner.
 
 ## Run
@@ -66,10 +68,89 @@ Extraction dev tool (real Haiku call, sends no iMessage):
 - A new request while one is still waiting for its game asks "Reply YES or NO", parsed without the model.
   A request that was already read back is simply replaced.
 - One draft per sender. It is deleted after 30 minutes of silence.
-- When the request is ready, the agent reads it back: "Got it: a bet on ASU vs Texas Tech, on Sunday Nov 15.
-  Next I will look up the game." Game lookup is chunk 3.
+- When the request is valid, the agent looks up the game right away (chunk 3, below). That reply replaces
+  the old chunk 2 readback, so the sender gets one message.
 - If extraction fails (API error, timeout, refusal, invalid output), the user gets the fixed fallback:
   "I could not read that, try: create a bet for ASU vs Texas Tech".
+
+## Game lookup and confirmation (chunk 3)
+Package `games/`:
+- **Provider interface** (`games/provider.py`), `GameProvider`:
+  - `find_candidates(team, opponent, date) -> list[Game]` returns scheduled games with a kickoff after now
+    that involve the typed team. The opponent narrows the matches. With a date, it searches that local
+    calendar day; without one, now through +14 days. Results are soonest first. An unknown team or opponent
+    returns `[]`, and any failure raises `ProviderError`.
+  - `get_status(game_id)` returns `scheduled | in_progress | final | postponed | cancelled`.
+  - `get_result(game_id)` returns `GameResult(home_score, away_score, official)`. Chunk 5 settles on this.
+  - A `Game` holds a canonical `game_id`, `league`, `home`/`away` (canonical id + display name),
+    `kickoff_utc` and `status`.
+- **Provider selection:** `GAME_PROVIDER=simulated` (default) or `realtime` (NFL only; stretch, see below).
+- **Team aliases** (`games/data/teams.json`):
+  - Each team has a canonical `id`, a `league`, a display `name` and `aliases`.
+  - Matching lowercases the typed name, strips punctuation, drops a leading "the", tolerates a trailing "s"
+    either way, then matches exactly.
+  - An alias shared by several teams ("arizona") offers all of their games, so the sender can choose.
+  - To add a nickname, append it to `aliases`. To add a team, append an object.
+- **Simulated schedule** (`games/data/schedule.json`):
+  - Each game has a `key` (its id becomes `sim:<key>`), `league`, `away`, `home`, `local_time` "HH:MM"
+    (in `LOCAL_TIMEZONE`), and either `day_offset` (days from today) or `weekday` (the next occurrence,
+    1-7 days ahead). Keep games within 14 days.
+  - Kickoffs are computed at seed time and stored in `sim_games`, so state survives a restart.
+  - Seeding happens on startup when the table is empty, or with `POST /admin/games/reset`. After editing
+    the file, call reset.
+- **Flow:**
+  - 0 games: "I could not find a game for X in the next 14 days. Which team or day…" The draft stays
+    collecting.
+  - 1 game: "I found <away> at <home>, <day, time>. Is this the game? Reply YES or NO."
+  - 2-5 games (soonest first): a numbered list, "Reply with a number, or NO."
+  - Confirmations are parsed by code: yes/y/yep/yeah, no/n/nope, or a number. "yes" only counts when one
+    game was offered.
+  - Other text is a miss. The first miss repeats the question; from the second on, the reply explains how
+    to answer. The model only checks whether the text is a new bet request, which then gets the
+    "Replace it? YES/NO" question.
+  - NO asks which game was meant.
+  - A game that kicked off before the confirmation is refused.
+  - Confirming stores a `bets` row (`status = game_confirmed`), deletes the draft, and replies "Game
+    confirmed: … Next I will create your deposit link."
+  - Confirming the same game twice returns the existing bet.
+  - If the provider fails, the sender gets a fixed apology and the draft stays collecting.
+- **Dev tool:** `.venv/bin/python scripts/try_lookup.py asu --opponent "texas tech" [--date YYYY-MM-DD]`
+  prints the candidates and the reply. It sends nothing.
+
+Simulated game admin (`X-Admin-Secret`; returns 409 with the real provider):
+- `POST /admin/games/{game_id}/finish` `{"home_score": 27, "away_score": 24}` sets status `final`, official.
+- `POST /admin/games/{game_id}/status` `{"status": "postponed" | "cancelled" | "in_progress"}`.
+- `POST /admin/games/reset` restores the schedule from `schedule.json`, anchored to today.
+
+Real provider (`GAME_PROVIDER=realtime`, NFL only), `games/realtime.py`:
+- **API:** realtimesportsapi.com, called with `Authorization: Bearer $SPORTS_API_KEY`. It uses the teams,
+  weeks, schedule (`?week=N&seasonType=T`) and single-event endpoints. Game ids look like `rts:nfl:<eventId>`.
+- **Verified response shapes** (fixtures in `tests/fixtures/realtime/`, fetched 2026-11-14 with
+  `scripts/fetch_real_samples.py`):
+  - Envelope `{success, data, meta}`, where `meta.rateLimit = {limit, remaining, reset}`.
+  - A game has `date` like `"2026-11-15T21:05Z"`, `status {state, completed, detail}`, and
+    `homeTeam`/`awayTeam` with `abbreviation` and `score`.
+- **Status mapping:**
+  - `state: "pre"` → scheduled (verified)
+  - `state: "post"` with `completed` or a detail starting "Final" → final (verified). It is **provisional**.
+  - `state: "in"` → in_progress (**unverified**: no live sample yet)
+  - detail containing "Postponed" → postponed, and "Cancel" → cancelled (**unverified**)
+- **Aliases:** the API's display names, short names, cities, abbreviations and slugs, plus
+  `games/data/nfl_nicknames.json`, plus the `nfl-*` aliases in `teams.json`. Canonical ids are `nfl-<abbr>`.
+- **Quota protection (free plan: 1,000 calls in month 1, then 125/month, 1 call/s):**
+  - Teams and schedules are cached for 6 h, weeks for 24 h, and a 404 is cached too. Single events are
+    cached for 60 s.
+  - Calls are spaced at least 1.1 s apart.
+  - Every call logs `rts.call` with `quotaRemaining`.
+  - An HTTP 429 blocks calls until `Retry-After` passes, and lookups send the fixed apology meanwhile.
+  - WebSockets and webhooks aren't used (they need a paid plan).
+  - A cold lookup costs about 5 calls: teams, weeks, and up to 3 schedule weeks.
+- **Selecting it without editing `.env`:** `GAME_PROVIDER=realtime .venv/bin/python -m app`. Process
+  environment variables override the `.env` file.
+
+> **Chunk 5 warning, provisional finals:** on the real provider a `final` result can be corrected after it
+> is first reported. Settlement must treat `final` as provisional: wait a few minutes, re-read the
+> result, and settle only if it is unchanged.
 
 ## Endpoints
 - `POST /inbound` (`X-Gateway-Secret`): 401 bad secret, 400 bad payload, 200 duplicate (no-op), 200 accepted

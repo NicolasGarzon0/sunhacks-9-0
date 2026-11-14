@@ -1,0 +1,15 @@
+{
+  "_doc": "Test schedule. Tests run with now = Saturday 2026-11-14 12:00 America/Phoenix.",
+  "games": [
+    {"key": "t-dal-phi-started", "league": "nfl", "away": "nfl-dal", "home": "nfl-phi", "day_offset": 0, "local_time": "09:00"},
+    {"key": "t-bal-pit", "league": "nfl", "away": "nfl-bal", "home": "nfl-pit", "day_offset": 0, "local_time": "18:00"},
+    {"key": "t-sea-ari", "league": "nfl", "away": "nfl-sea", "home": "nfl-ari", "day_offset": 1, "local_time": "14:05"},
+    {"key": "t-byu-asu", "league": "ncaaf", "away": "ncaaf-byu", "home": "ncaaf-asu", "day_offset": 3, "local_time": "17:00"},
+    {"key": "t-buf-kc", "league": "nfl", "away": "nfl-buf", "home": "nfl-kc", "weekday": "friday", "local_time": "18:15"},
+    {"key": "t-ttu-asu", "league": "ncaaf", "away": "ncaaf-ttu", "home": "ncaaf-asu", "day_offset": 7, "local_time": "19:30"},
+    {"key": "t-kc-den", "league": "nfl", "away": "nfl-kc", "home": "nfl-den", "day_offset": 10, "local_time": "14:25"},
+    {"key": "t-phi-dal", "league": "nfl", "away": "nfl-phi", "home": "nfl-dal", "day_offset": 12, "local_time": "18:20"},
+    {"key": "t-asu-ariz", "league": "ncaaf", "away": "ncaaf-asu", "home": "ncaaf-ariz", "day_offset": 13, "local_time": "20:00"},
+    {"key": "t-sf-lar-far", "league": "nfl", "away": "nfl-sf", "home": "nfl-lar", "day_offset": 20, "local_time": "18:00"}
+  ]
+}

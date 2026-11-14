@@ -37,13 +37,16 @@ class Settings:
     anthropic_api_key: str = ""
     haiku_model: str = DEFAULT_HAIKU_MODEL
     local_timezone: str = "America/Phoenix"
+    game_provider: str = "simulated"
+    sports_api_key: str | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
 
     def __repr__(self) -> str:  # never leak secrets through repr
         return (
             f"Settings(gateway_url={self.gateway_url!r}, port={self.port}, log_level={self.log_level!r}, "
-            f"haiku_model={self.haiku_model!r}, local_timezone={self.local_timezone!r})"
+            f"haiku_model={self.haiku_model!r}, local_timezone={self.local_timezone!r}, "
+            f"game_provider={self.game_provider!r})"
         )
 
 
@@ -109,6 +112,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
     except (ZoneInfoNotFoundError, ValueError):
         raise ConfigError("LOCAL_TIMEZONE is not a valid IANA timezone (e.g. America/Phoenix)") from None
 
+    game_provider = (get("GAME_PROVIDER") or "simulated").lower()
+    if game_provider not in ("simulated", "realtime"):
+        raise ConfigError("GAME_PROVIDER must be 'simulated' or 'realtime'")
+    if game_provider == "realtime" and get("SPORTS_API_KEY") is None:
+        raise ConfigError("Missing required environment variable(s): SPORTS_API_KEY (needed when GAME_PROVIDER=realtime)")
+
     log_level = (get("LOG_LEVEL") or "info").lower()
     if log_level not in LOG_LEVELS:
         log_level = "info"
@@ -123,6 +132,8 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         anthropic_api_key=get("ANTHROPIC_API_KEY"),  # type: ignore[arg-type]
         haiku_model=get("HAIKU_MODEL") or DEFAULT_HAIKU_MODEL,
         local_timezone=tz,
+        game_provider=game_provider,
+        sports_api_key=get("SPORTS_API_KEY"),
         supabase_url=get("SUPABASE_URL"),
         supabase_service_role_key=get("SUPABASE_SERVICE_ROLE_KEY"),
     )

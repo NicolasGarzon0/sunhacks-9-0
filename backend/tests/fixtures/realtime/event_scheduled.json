@@ -1,0 +1,85 @@
+{
+  "success": true,
+  "data": {
+    "id": "401873061",
+    "uid": "s:20~l:28~e:401873061",
+    "name": "Los Angeles Rams at Arizona Cardinals",
+    "shortName": "LAR @ ARI",
+    "date": "2026-11-15T21:05Z",
+    "status": {
+      "state": "pre",
+      "completed": false,
+      "period": 0,
+      "clock": "0:00",
+      "detail": "Sun, November 15th at 4:05 PM EST",
+      "halftime": false,
+      "firstHalfEnded": false
+    },
+    "homeTeam": {
+      "id": "22",
+      "name": "Arizona Cardinals",
+      "abbreviation": "ARI",
+      "logo": "https://realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAl8ASkoYVg",
+      "color": "a40227",
+      "alternateColor": "ffffff",
+      "winner": false,
+      "score": 0
+    },
+    "awayTeam": {
+      "id": "14",
+      "name": "Los Angeles Rams",
+      "abbreviation": "LAR",
+      "logo": "https://realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGD0wbSkoYVg",
+      "color": "003594",
+      "alternateColor": "ffd100",
+      "winner": false,
+      "score": 0
+    },
+    "competition": {
+      "attendance": 0,
+      "neutralSite": false,
+      "conferenceCompetition": false,
+      "divisionCompetition": false,
+      "playByPlayAvailable": false,
+      "highlightsAvailable": true
+    },
+    "venue": {
+      "id": "3970",
+      "name": "State Farm Stadium",
+      "city": "Glendale",
+      "state": "AZ",
+      "indoor": true,
+      "grass": true
+    },
+    "notes": [],
+    "season": {
+      "year": 2026,
+      "displayName": "2026",
+      "type": {
+        "id": "2",
+        "name": "Regular Season",
+        "abbreviation": "reg"
+      },
+      "week": {
+        "number": 10,
+        "startDate": "2026-11-11T08:00Z",
+        "endDate": "2026-11-18T07:59Z",
+        "text": "Week 10"
+      }
+    },
+    "broadcasts": [
+      {
+        "network": "CBS",
+        "type": "TV"
+      }
+    ],
+    "officials": []
+  },
+  "meta": {
+    "rateLimit": {
+      "limit": 1000,
+      "remaining": 995,
+      "reset": 1796083199999
+    }
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "success": true,
+  "data": [
+    {
+      "number": 1,
+      "seasonType": 1,
+      "label": "Hall of Fame Weekend",
+      "startDate": "2026-08-06T07:00Z",
+      "endDate": "2026-08-13T06:59Z"
+    },
+    {
+      "number": 2,
+      "seasonType": 1,
+      "label": "Preseason Week 1",
+      "startDate": "2026-08-13T07:00Z",
+      "endDate": "2026-08-20T06:59Z"
+    },
+    {
+      "number": 3,
+      "seasonType": 1,
+      "label": "Preseason Week 2",
+      "startDate": "2026-08-20T07:00Z",
+      "endDate": "2026-08-27T06:59Z"
+    },
+    {
+      "number": 4,
+      "seasonType": 1,
+      "label": "Preseason Week 3",
+      "startDate": "2026-08-27T07:00Z",
+      "endDate": "2026-09-06T06:59Z"
+    },
+    {
+      "number": 1,
+      "seasonType": 2,
+      "label": "Week 1",
+      "startDate": "2026-09-06T07:00Z",
+      "endDate": "2026-09-16T06:59Z"
+    },
+    {
+      "number": 2,
+      "seasonType": 2,
+      "label": "Week 2",
+      "startDate": "2026-09-16T07:00Z",
+      "endDate": "2026-09-23T06:59Z"
+    },
+    {
+      "number": 3,
+      "seasonType": 2,
+      "label": "Week 3",
+      "startDate": "2026-09-23T07:00Z",
+      "endDate": "2026-09-30T06:59Z"
+    },
+    {
+      "number": 4,
+      "seasonType": 2,
+      "label": "Week 4",
+      "startDate": "2026-09-30T07:00Z",
+      "endDate": "2026-10-07T06:59Z"
+    },
+    {
+      "number": 5,
+      "seasonType": 2,
+      "label": "Week 5",
+      "startDate": "2026-10-07T07:00Z",
+      "endDate": "2026-10-14T06:59Z"
+    },
+    {
+      "number": 6,
+      "seasonType": 2,
+      "label": "Week 6",
+      "startDate": "2026-10-14T07:00Z",
+      "endDate": "2026-10-21T06:59Z"
+    },
+    {
+      "number": 7,
+      "seasonType": 2,
+      "label": "Week 7",
+      "startDate": "2026-10-21T07:00Z",
+      "endDate": "2026-10-28T06:59Z"
+    },
+    {
+      "number": 8,
+      "seasonType": 2,
+      "label": "Week 8",
+      "startDate": "2026-10-28T07:00Z",
+      "endDate": "2026-11-04T07:59Z"
+    },
+    {
+      "number": 9,
+      "seasonType": 2,
+      "label": "Week 9",
+      "startDate": "2026-11-04T08:00Z",
+      "endDate": "2026-11-11T07:59Z"
+    },
+    {
+      "number": 10,
+      "seasonType": 2,
+      "label": "Week 10",
+      "startDate": "2026-11-11T08:00Z",
+      "endDate": "2026-11-18T07:59Z"
+    },
+    {
+      "number": 11,
+      "seasonType": 2,
+      "label": "Week 11",
+      "startDate": "2026-11-18T08:00Z",
+      "endDate": "2026-11-25T07:59Z"
+    },
+    {
+      "number": 12,
+      "seasonType": 2,
+      "label": "Week 12",
+      "startDate": "2026-11-25T08:00Z",
+      "endDate": "2026-12-02T07:59Z"
+    },
+    {
+      "number": 13,
+      "seasonType": 2,
+      "label": "Week 13",
+      "startDate": "2026-12-02T08:00Z",
+      "endDate": "2026-12-09T07:59Z"
+    },
+    {
+      "number": 14,
+      "seasonType": 2,
+      "label": "Week 14",
+      "startDate": "2026-12-09T08:00Z",
+      "endDate": "2026-12-16T07:59Z"
+    },
+    {
+      "number": 15,
+      "seasonType": 2,
+      "label": "Week 15",
+      "startDate": "2026-12-16T08:00Z",
+      "endDate": "2026-12-23T07:59Z"
+    },
+    {
+      "number": 16,
+      "seasonType": 2,
+      "label": "Week 16",
+      "startDate": "2026-12-23T08:00Z",
+      "endDate": "2026-12-30T07:59Z"
+    },
+    {
+      "number": 17,
+      "seasonType": 2,
+      "label": "Week 17",
+      "startDate": "2026-12-30T08:00Z",
+      "endDate": "2027-01-06T07:59Z"
+    },
+    {
+      "number": 18,
+      "seasonType": 2,
+      "label": "Week 18",
+      "startDate": "2027-01-06T08:00Z",
+      "endDate": "2027-01-13T07:59Z"
+    },
+    {
+      "number": 1,
+      "seasonType": 3,
+      "label": "Wild Card",
+      "startDate": "2027-01-13T08:00Z",
+      "endDate": "2027-01-20T07:59Z"
+    },
+    {
+      "number": 2,
+      "seasonType": 3,
+      "label": "Divisional Round",
+      "startDate": "2027-01-20T08:00Z",
+      "endDate": "2027-01-27T07:59Z"
+    },
+    {
+      "number": 3,
+      "seasonType": 3,
+      "label": "Conference Championship",
+      "startDate": "2027-01-27T08:00Z",
+      "endDate": "2027-02-03T07:59Z"
+    },
+    {
+      "number": 4,
+      "seasonType": 3,
+      "label": "Super Bowl",
+      "startDate": "2027-02-03T08:00Z",
+      "endDate": "2027-02-16T07:59Z"
+    }
+  ],
+  "meta": {
+    "rateLimit": {
+      "limit": 1000,
+      "remaining": 998,
+      "reset": 1796083199999
+    }
+  }
+}

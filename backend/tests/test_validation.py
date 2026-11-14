@@ -14,12 +14,12 @@ def ev(**fields):
 
 def test_ready_without_date():
     o = ev()
-    assert o.ready and o.reply == "Got it: a bet on ASU vs Texas Tech. Next I will look up the game."
+    assert o.ready and o.reply == ""  # the flow replaces this with the lookup result
 
 
 def test_ready_with_date_and_unknown_opponent():
     o = ev(opponent=None, date="2026-11-15")
-    assert o.reply == "Got it: a bet on ASU vs the other team, on Sunday Nov 15. Next I will look up the game."
+    assert o.ready and o.fields == {"team": "ASU", "opponent": None, "date": "2026-11-15"}
 
 
 def test_team_required():
@@ -42,7 +42,7 @@ def test_contacts_never_accepted():
     o = ev(team="+14805550123")
     assert o.reason == "team_contact" and o.fields["team"] is None
     o = ev(opponent="480 555 0199")
-    assert o.ready and o.fields["opponent"] is None and "the other team" in o.reply
+    assert o.ready and o.fields["opponent"] is None
 
 
 def test_stake_side_friend_are_dropped():
@@ -51,5 +51,5 @@ def test_stake_side_friend_are_dropped():
 
 
 def test_long_values_are_clipped():
-    o = ev(team="A" * 100)
-    assert "A" * 39 + "…" in o.reply and "A" * 41 not in o.reply
+    assert T.clip("A" * 100) == "A" * 39 + "…"
+    assert "A" * 41 not in T.no_games("A" * 100, None)

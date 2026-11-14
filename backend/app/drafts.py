@@ -13,12 +13,20 @@ from zoneinfo import ZoneInfo
 
 from extraction.client import MAX_INPUT_CHARS
 from extraction.schema import Extraction
+from games.models import Game
+from games.provider import GameProvider
 
 from . import templates as T
+from .confirm import parse_confirmation
 from .gateway_client import GatewayClient
 from .logging import Logger
 from .repository import Draft, Repository, RosterEntry
-from .validation import evaluate
+from .validation import evaluate, parse_date
+
+MAX_CANDIDATES = 5
+# Marks a draft whose last lookup found nothing (or failed). It stays collecting so a follow-up answer is
+# merged, but a brand-new request replaces it without the "Replace it?" question: there is nothing to lose.
+DEAD_END = "lookup_dead_end"
 
 DRAFT_TTL = timedelta(minutes=30)
 YES_RE = re.compile(r"^\s*(yes|y)\s*[.!]*\s*$", re.IGNORECASE)
@@ -37,6 +45,20 @@ def parse_yes_no(text: str) -> bool | None:
     return None
 
 
+def merge_fields(old: dict, new: dict) -> dict:
+    """Merge a follow-up answer into a draft. A newly named team brings its own opponent (possibly none),
+    so a stale opponent from the previous search does not stick."""
+    merged = dict(old)
+    if new.get("team"):
+        merged["team"] = new["team"]
+        merged["opponent"] = new.get("opponent")
+    elif new.get("opponent"):
+        merged["opponent"] = new["opponent"]
+    if new.get("date"):
+        merged["date"] = new["date"]
+    return merged
+
+
 class BetFlow:
     def __init__(
         self,
@@ -45,12 +67,14 @@ class BetFlow:
         extractor: Extractor,
         logger: Logger,
         *,
+        provider: GameProvider,
         tz: str,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self.repo = repo
         self.gateway = gateway
         self.extractor = extractor
+        self.provider = provider
         self.logger = logger
         self.tz = tz
         self.now = now or (lambda: datetime.now(timezone.utc))
@@ -96,9 +120,13 @@ class BetFlow:
             if answer is False:
                 collecting.pending_replacement = None
                 await self._touch(collecting)
-                return T.REPLACE_KEPT_PREFIX + T.question(collecting.pending_field or "team")
+                return T.REPLACE_KEPT_PREFIX + self._pending_question(collecting)
             new_fields = collecting.pending_replacement
             return await self._evaluate_and_save(proposer, new_fields, log)
+
+        # Waiting on a game confirmation: parsed by code; the model is only used to spot a new bet request.
+        if collecting is not None and collecting.pending_field == "confirm":
+            return await self._confirm(proposer, collecting, text, log)
 
         pending = collecting.pending_field if collecting is not None else None
         extraction = await self.extractor.extract(text, self.today(), self.tz, pending)
@@ -110,22 +138,93 @@ class BetFlow:
         self.logger.info("bet.classified", classification=kind, hasDraft=collecting is not None, **log)
 
         if kind == "bet_proposal":
-            if collecting is not None:
+            if collecting is not None and not collecting.fields.get(DEAD_END):
                 collecting.pending_replacement = extraction.fields()
                 await self._touch(collecting)
                 return T.REPLACE_ASK
             return await self._evaluate_and_save(proposer, extraction.fields(), log)
 
         if kind == "reply_to_pending" and collecting is not None:
-            merged = dict(collecting.fields)
-            merged.update({k: v for k, v in extraction.fields().items() if v is not None})
-            return await self._evaluate_and_save(proposer, merged, log)
+            return await self._evaluate_and_save(proposer, merge_fields(collecting.fields, extraction.fields()), log)
 
         # "other", or a reply with nothing pending.
         if collecting is not None and collecting.pending_field:
             await self._touch(collecting)
-            return T.question(collecting.pending_field)
+            return self._pending_question(collecting)
         return T.HELP
+
+    def _pending_question(self, draft: Draft) -> str:
+        if draft.pending_field == "confirm" and draft.candidates:
+            return T.offer([Game.from_json(c) for c in draft.candidates], self.tz)
+        return T.question(draft.pending_field or "team")
+
+    async def _confirm(self, proposer: RosterEntry, draft: Draft, text: str, log: dict) -> str:
+        games = [Game.from_json(c) for c in draft.candidates or []]
+        answer = parse_confirmation(text, len(games))
+        if answer is None:
+            extraction = await self.extractor.extract(text, self.today(), self.tz, "confirm")
+            if extraction is not None and extraction.classification == "bet_proposal":
+                self.logger.info("bet.confirm_answer", answer="new_request", **log)
+                draft.pending_replacement = extraction.fields()
+                await self._touch(draft)
+                return T.REPLACE_ASK
+            draft.confirm_misses += 1
+            self.logger.info("bet.confirm_answer", answer="unclear", misses=draft.confirm_misses, **log)
+            await self._touch(draft)
+            question = T.offer(games, self.tz)
+            return question if draft.confirm_misses < 2 else f"{T.offer_help(len(games))}\n{question}"
+
+        self.logger.info("bet.confirm_answer", answer=answer.kind, **log)
+        if answer.kind == "no":
+            self._back_to_team(draft)
+            await self._touch(draft)
+            return T.CONFIRM_NO
+
+        game = games[answer.index]
+        if game.kickoff_utc <= self.now():
+            self._back_to_team(draft)
+            await self._touch(draft)
+            self.logger.info("bet.confirm_started", gameId=game.game_id, **log)
+            return T.GAME_STARTED
+        bet, created = await self.repo.create_or_get_bet(proposer.handle, game.to_json())
+        await self.repo.delete_draft(proposer.handle)
+        self.logger.info("bet.confirmed", betId=bet.id, gameId=game.game_id, created=created, **log)
+        return T.confirmed(game, self.tz)
+
+    @staticmethod
+    def _back_to_team(draft: Draft) -> None:
+        draft.status = "collecting"
+        draft.pending_field = "team"
+        draft.candidates = None
+        draft.confirm_misses = 0
+
+    async def _lookup(self, proposer: RosterEntry, fields: dict, log: dict) -> str:
+        """Find candidate games for a valid request; the reply replaces the chunk 2 readback."""
+        draft = Draft(
+            handle=proposer.handle, fields=fields, status="collecting", pending_field="team",
+            pending_replacement=None, updated_at=self.now(),
+        )
+        day = parse_date(fields.get("date"))
+        try:
+            found = await self.provider.find_candidates(fields["team"], fields.get("opponent"), day)
+        except Exception as e:
+            draft.fields = {**fields, DEAD_END: True}
+            await self.repo.save_draft(draft)
+            self.logger.warn("bet.lookup_failed", provider=self.provider.name, detail=type(e).__name__, **log)
+            return T.LOOKUP_APOLOGY
+        now = self.now()
+        games = [g for g in found if g.status == "scheduled" and g.kickoff_utc > now]
+        games.sort(key=lambda g: g.kickoff_utc)
+        games = games[:MAX_CANDIDATES]
+        self.logger.info("bet.lookup", provider=self.provider.name, found=len(found), offered=len(games), **log)
+        if not games:
+            draft.fields = {**fields, DEAD_END: True}
+            await self.repo.save_draft(draft)
+            return T.no_games(fields["team"], day)
+        draft.pending_field = "confirm"
+        draft.candidates = [g.to_json() for g in games]
+        await self.repo.save_draft(draft)
+        return T.offer(games, self.tz)
 
     async def _touch(self, draft: Draft) -> None:
         draft.updated_at = self.now()
@@ -142,7 +241,9 @@ class BetFlow:
             pending_replacement=None,
             updated_at=self.now(),
         )
-        await self.repo.save_draft(draft)
         self.logger.info("bet.validated", status=draft.status, reason=outcome.reason, pendingField=outcome.pending_field, **log)
         self.logger.debug("bet.fields", fields=str({k: v for k, v in outcome.fields.items()}), **log)
+        if outcome.ready:
+            return await self._lookup(proposer, outcome.fields, log)
+        await self.repo.save_draft(draft)
         return outcome.reply

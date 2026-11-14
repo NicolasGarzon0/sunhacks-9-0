@@ -58,5 +58,5 @@ def evaluate(fields: dict, today: date) -> Outcome:
             return Outcome(False, f, T.date_out_of_range(last), pending_field="date", reason="date_out_of_range")
         f["date"] = d.isoformat()
 
-    reply = T.readback(f["team"], f["opponent"], parse_date(f["date"]))
-    return Outcome(True, f, reply)
+    # Ready: the flow replaces this with the game lookup result (chunk 3).
+    return Outcome(True, f, "")

@@ -1,0 +1,1046 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "401873052",
+      "name": "Washington Commanders at New York Giants",
+      "shortName": "WSH @ NYG",
+      "date": "2026-11-13T01:15Z",
+      "status": {
+        "state": "post",
+        "period": 4,
+        "detail": "Final"
+      },
+      "homeTeam": {
+        "id": "19",
+        "name": "New York Giants",
+        "abbreviation": "NYG",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGEE4GFl8UXltLAhwNS1BKQQtf",
+        "score": 21
+      },
+      "awayTeam": {
+        "id": "28",
+        "name": "Washington Commanders",
+        "abbreviation": "WSH",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGEE4GFl8UXltLAhwUQV9KQQtf",
+        "score": 24
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "East Rutherford",
+        "grass": false,
+        "name": "MetLife Stadium",
+        "indoor": false,
+        "id": "3839",
+        "state": "NJ"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Prime Video",
+          "type": "Streaming"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873053",
+      "name": "New England Patriots at Detroit Lions",
+      "shortName": "NE VS DET",
+      "date": "2026-11-15T14:30Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 9:30 AM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "bbbbbb",
+        "score": 0,
+        "winner": false,
+        "color": "0076b6",
+        "name": "Detroit Lions",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGB0gdSkoYVg",
+        "id": "8",
+        "abbreviation": "DET"
+      },
+      "awayTeam": {
+        "alternateColor": "c60c30",
+        "score": 0,
+        "winner": false,
+        "color": "002a5c",
+        "name": "New England Patriots",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDUhHFFQR",
+        "id": "17",
+        "abbreviation": "NE"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": true,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Munich",
+        "grass": true,
+        "name": "FC Bayern Munich Stadium",
+        "indoor": false,
+        "id": "11930"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": [
+        "NFL Munich Game"
+      ]
+    },
+    {
+      "id": "401873054",
+      "name": "Buffalo Bills at New York Jets",
+      "shortName": "BUF @ NYJ",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "ffffff",
+        "score": 0,
+        "winner": false,
+        "color": "115740",
+        "name": "New York Jets",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDVQDSkoYVg",
+        "id": "20",
+        "abbreviation": "NYJ"
+      },
+      "awayTeam": {
+        "alternateColor": "d50a0a",
+        "score": 0,
+        "winner": false,
+        "color": "00338d",
+        "name": "Buffalo Bills",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAVgPSkoYVg",
+        "id": "2",
+        "abbreviation": "BUF"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "East Rutherford",
+        "grass": false,
+        "name": "MetLife Stadium",
+        "indoor": false,
+        "id": "3839",
+        "state": "NJ"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "CBS",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873055",
+      "name": "Carolina Panthers at New Orleans Saints",
+      "shortName": "CAR @ NO",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "000000",
+        "score": 0,
+        "winner": false,
+        "color": "d3bc8d",
+        "name": "New Orleans Saints",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDUJHFFQR",
+        "id": "18",
+        "abbreviation": "NO"
+      },
+      "awayTeam": {
+        "alternateColor": "000000",
+        "score": 0,
+        "winner": false,
+        "color": "0085ca",
+        "name": "Carolina Panthers",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAEwbSkoYVg",
+        "id": "29",
+        "abbreviation": "CAR"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "New Orleans",
+        "grass": false,
+        "name": "Caesars Superdome",
+        "indoor": true,
+        "id": "3493",
+        "state": "LA"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873056",
+      "name": "Houston Texans at Cleveland Browns",
+      "shortName": "HOU @ CLE",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "ff3c00",
+        "score": 0,
+        "winner": false,
+        "color": "472a08",
+        "name": "Cleveland Browns",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAEEMSkoYVg",
+        "id": "5",
+        "abbreviation": "CLE"
+      },
+      "awayTeam": {
+        "alternateColor": "eb0028",
+        "score": 0,
+        "winner": false,
+        "color": "021018",
+        "name": "Houston Texans",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGC0IcSkoYVg",
+        "id": "34",
+        "abbreviation": "HOU"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Cleveland",
+        "grass": true,
+        "name": "Huntington Bank Field",
+        "indoor": false,
+        "id": "3679",
+        "state": "OH"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873057",
+      "name": "Jacksonville Jaguars at Tennessee Titans",
+      "shortName": "JAX @ TEN",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "001532",
+        "score": 0,
+        "winner": false,
+        "color": "4495d2",
+        "name": "Tennessee Titans",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGF0gHSkoYVg",
+        "id": "10",
+        "abbreviation": "TEN"
+      },
+      "awayTeam": {
+        "alternateColor": "d7a22a",
+        "score": 0,
+        "winner": false,
+        "color": "007487",
+        "name": "Jacksonville Jaguars",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGCUwRSkoYVg",
+        "id": "30",
+        "abbreviation": "JAX"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Nashville",
+        "grass": false,
+        "name": "Nissan Stadium",
+        "indoor": false,
+        "id": "3810",
+        "state": "TN"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873058",
+      "name": "Kansas City Chiefs at Atlanta Falcons",
+      "shortName": "KC @ ATL",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "000000",
+        "score": 0,
+        "winner": false,
+        "color": "a71930",
+        "name": "Atlanta Falcons",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAlkFSkoYVg",
+        "id": "1",
+        "abbreviation": "ATL"
+      },
+      "awayTeam": {
+        "alternateColor": "ffb612",
+        "score": 0,
+        "winner": false,
+        "color": "e31837",
+        "name": "Kansas City Chiefs",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGCE5HFFQR",
+        "id": "12",
+        "abbreviation": "KC"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Atlanta",
+        "grass": false,
+        "name": "Mercedes-Benz Stadium",
+        "indoor": true,
+        "id": "5348",
+        "state": "GA"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "CBS",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873059",
+      "name": "Miami Dolphins at Indianapolis Colts",
+      "shortName": "MIA @ IND",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "ffffff",
+        "score": 0,
+        "winner": false,
+        "color": "003b75",
+        "name": "Indianapolis Colts",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGCkMNSkoYVg",
+        "id": "11",
+        "abbreviation": "IND"
+      },
+      "awayTeam": {
+        "alternateColor": "fc4c02",
+        "score": 0,
+        "winner": false,
+        "color": "008e97",
+        "name": "Miami Dolphins",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDkQISkoYVg",
+        "id": "15",
+        "abbreviation": "MIA"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Indianapolis",
+        "grass": false,
+        "name": "Lucas Oil Stadium",
+        "indoor": true,
+        "id": "3812",
+        "state": "IN"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "CBS",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873060",
+      "name": "Minnesota Vikings at Green Bay Packers",
+      "shortName": "MIN @ GB",
+      "date": "2026-11-15T18:00Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 1:00 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "ffb612",
+        "score": 0,
+        "winner": false,
+        "color": "204e32",
+        "name": "Green Bay Packers",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGBE9HFFQR",
+        "id": "9",
+        "abbreviation": "GB"
+      },
+      "awayTeam": {
+        "alternateColor": "ffc62f",
+        "score": 0,
+        "winner": false,
+        "color": "4f2683",
+        "name": "Minnesota Vikings",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDkQHSkoYVg",
+        "id": "16",
+        "abbreviation": "MIN"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Green Bay",
+        "grass": true,
+        "name": "Lambeau Field",
+        "indoor": false,
+        "id": "3798",
+        "state": "WI"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873061",
+      "name": "Los Angeles Rams at Arizona Cardinals",
+      "shortName": "LAR @ ARI",
+      "date": "2026-11-15T21:05Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 4:05 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "ffffff",
+        "score": 0,
+        "winner": false,
+        "color": "a40227",
+        "name": "Arizona Cardinals",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAl8ASkoYVg",
+        "id": "22",
+        "abbreviation": "ARI"
+      },
+      "awayTeam": {
+        "alternateColor": "ffd100",
+        "score": 0,
+        "winner": false,
+        "color": "003594",
+        "name": "Los Angeles Rams",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGD0wbSkoYVg",
+        "id": "14",
+        "abbreviation": "LAR"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Glendale",
+        "grass": true,
+        "name": "State Farm Stadium",
+        "indoor": true,
+        "id": "3970",
+        "state": "AZ"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "CBS",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873062",
+      "name": "Seattle Seahawks at Las Vegas Raiders",
+      "shortName": "SEA @ LV",
+      "date": "2026-11-15T21:05Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 4:05 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "a5acaf",
+        "score": 0,
+        "winner": false,
+        "color": "000000",
+        "name": "Las Vegas Raiders",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGD1tHFFQR",
+        "id": "13",
+        "abbreviation": "LV"
+      },
+      "awayTeam": {
+        "alternateColor": "69be28",
+        "score": 0,
+        "winner": false,
+        "color": "002a5c",
+        "name": "Seattle Seahawks",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGEEgISkoYVg",
+        "id": "26",
+        "abbreviation": "SEA"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Las Vegas",
+        "grass": true,
+        "name": "Allegiant Stadium",
+        "indoor": true,
+        "id": "6501",
+        "state": "NV"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "CBS",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873063",
+      "name": "San Francisco 49ers at Dallas Cowboys",
+      "shortName": "SF @ DAL",
+      "date": "2026-11-15T21:25Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 4:25 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "b0b7bc",
+        "score": 0,
+        "winner": false,
+        "color": "002a5c",
+        "name": "Dallas Cowboys",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGB0wFSkoYVg",
+        "id": "6",
+        "abbreviation": "DAL"
+      },
+      "awayTeam": {
+        "alternateColor": "b3995d",
+        "score": 0,
+        "winner": false,
+        "color": "aa0000",
+        "name": "San Francisco 49ers",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGEEtHFFQR",
+        "id": "25",
+        "abbreviation": "SF"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Arlington",
+        "grass": false,
+        "name": "AT&T Stadium",
+        "indoor": true,
+        "id": "3687",
+        "state": "TX"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "Fox",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873064",
+      "name": "Pittsburgh Steelers at Cincinnati Bengals",
+      "shortName": "PIT @ CIN",
+      "date": "2026-11-16T01:20Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Sun, November 15th at 8:20 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "000000",
+        "score": 0,
+        "winner": false,
+        "color": "fb4f14",
+        "name": "Cincinnati Bengals",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAEQHSkoYVg",
+        "id": "4",
+        "abbreviation": "CIN"
+      },
+      "awayTeam": {
+        "alternateColor": "ffb612",
+        "score": 0,
+        "winner": false,
+        "color": "000000",
+        "name": "Pittsburgh Steelers",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGE0QdSkoYVg",
+        "id": "23",
+        "abbreviation": "PIT"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Cincinnati",
+        "grass": false,
+        "name": "Paycor Stadium",
+        "indoor": false,
+        "id": "3874",
+        "state": "OH"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "NBC",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    },
+    {
+      "id": "401873065",
+      "name": "Los Angeles Chargers at Baltimore Ravens",
+      "shortName": "LAC @ BAL",
+      "date": "2026-11-17T01:15Z",
+      "status": {
+        "period": 0,
+        "halftime": false,
+        "clock": "0:00",
+        "completed": false,
+        "detail": "Mon, November 16th at 8:15 PM EST",
+        "state": "pre",
+        "firstHalfEnded": false
+      },
+      "homeTeam": {
+        "alternateColor": "000000",
+        "score": 0,
+        "winner": false,
+        "color": "29126f",
+        "name": "Baltimore Ravens",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGAUwFSkoYVg",
+        "id": "33",
+        "abbreviation": "BAL"
+      },
+      "awayTeam": {
+        "alternateColor": "ffc20e",
+        "score": 0,
+        "winner": false,
+        "color": "0080c6",
+        "name": "Los Angeles Chargers",
+        "logo": "https://www.realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGD0wKSkoYVg",
+        "id": "24",
+        "abbreviation": "LAC"
+      },
+      "competition": {
+        "divisionCompetition": false,
+        "conferenceCompetition": false,
+        "playByPlayAvailable": false,
+        "neutralSite": false,
+        "attendance": 0,
+        "highlightsAvailable": true
+      },
+      "venue": {
+        "city": "Baltimore",
+        "grass": true,
+        "name": "M&T Bank Stadium",
+        "indoor": false,
+        "id": "3814",
+        "state": "MD"
+      },
+      "season": {
+        "week": {
+          "number": 10,
+          "endDate": "2026-11-18T07:59Z",
+          "text": "Week 10",
+          "startDate": "2026-11-11T08:00Z"
+        },
+        "year": 2026,
+        "displayName": "2026",
+        "type": {
+          "name": "Regular Season",
+          "id": "2",
+          "abbreviation": "reg"
+        }
+      },
+      "broadcasts": [
+        {
+          "network": "ESPN",
+          "type": "TV"
+        }
+      ],
+      "officials": [],
+      "notes": []
+    }
+  ],
+  "meta": {
+    "week": 10,
+    "seasonType": 2,
+    "dateRange": {
+      "start": "2026-11-11T08:00Z",
+      "end": "2026-11-18T07:59Z"
+    },
+    "source": "synced",
+    "rateLimit": {
+      "limit": 1000,
+      "remaining": 997,
+      "reset": 1796083199999
+    }
+  }
+}

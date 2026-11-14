@@ -9,7 +9,7 @@ import asyncio
 import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, Literal
 
 import psycopg
 from fastapi import BackgroundTasks, FastAPI, Header, Request
@@ -18,6 +18,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from extraction.client import HaikuExtractor
+from games.factory import build_provider
+from games.provider import GameProvider
+from games.simulated import SimulatedProvider
 
 from .config import Settings, load_settings
 from .drafts import BetFlow, Extractor
@@ -37,6 +40,15 @@ class InboundPayload(BaseModel):
     handle: HandleStr
     text: str = Field(max_length=10000)
     receivedAt: datetime
+
+
+class FinishIn(BaseModel):
+    home_score: int = Field(ge=0, le=999)
+    away_score: int = Field(ge=0, le=999)
+
+
+class StatusIn(BaseModel):
+    status: Literal["postponed", "cancelled", "in_progress"]
 
 
 class RosterIn(BaseModel):
@@ -60,6 +72,7 @@ def create_app(
     gateway: GatewayClient | None = None,
     logger: Logger | None = None,
     extractor: Extractor | None = None,
+    provider: GameProvider | None = None,
     now: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Pass repo/gateway/extractor in tests; otherwise they are built from settings in the lifespan."""
@@ -86,13 +99,25 @@ def create_app(
         if app.state.extractor is None:
             app.state.extractor = HaikuExtractor(settings.anthropic_api_key, settings.haiku_model, logger)
             owns_extractor = True
+        owns_provider = False
+        if app.state.provider is None:
+            app.state.provider = build_provider(settings, app.state.repo, logger, now=now)
+            owns_provider = True
+        if isinstance(app.state.provider, SimulatedProvider):
+            try:
+                if await app.state.provider.seed_if_empty():
+                    logger.info("games.seeded", provider="simulated")
+            except Exception as e:
+                logger.error("games.seed_failed", detail=err_detail(e))
         logger.info(
-            "backend.started", port=settings.port, gatewayUrl=settings.gateway_url, model=settings.haiku_model,
+            "backend.started", gameProvider=app.state.provider.name, port=settings.port, gatewayUrl=settings.gateway_url, model=settings.haiku_model,
             timezone=settings.local_timezone,
         )
         try:
             yield
         finally:
+            if owns_provider and hasattr(app.state.provider, "aclose"):
+                await app.state.provider.aclose()
             if owns_extractor:
                 await app.state.extractor.aclose()
             if owns_gateway:
@@ -106,13 +131,14 @@ def create_app(
     app.state.gateway = gateway
     app.state.logger = logger
     app.state.extractor = extractor
+    app.state.provider = provider
     app.state.flow = None
 
     def get_flow() -> BetFlow:
         if app.state.flow is None:
             app.state.flow = BetFlow(
                 app.state.repo, app.state.gateway, app.state.extractor, logger,
-                tz=settings.local_timezone, now=now,
+                provider=app.state.provider, tz=settings.local_timezone, now=now,
             )
         return app.state.flow
 
@@ -182,6 +208,52 @@ def create_app(
             return denied
         entries = await app.state.repo.list_roster()
         return {"ok": True, "roster": [e.__dict__ for e in entries]}
+
+    def _sim_provider() -> SimulatedProvider | JSONResponse:
+        p = app.state.provider
+        if not isinstance(p, SimulatedProvider):
+            return _err(409, "CONFLICT", "game admin endpoints only work with GAME_PROVIDER=simulated")
+        return p
+
+    @app.post("/admin/games/reset")
+    async def admin_games_reset(x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        p = _sim_provider()
+        if isinstance(p, JSONResponse):
+            return p
+        n = await p.reset()
+        logger.info("admin.games_reset", games=n)
+        return {"ok": True, "games": n}
+
+    @app.post("/admin/games/{game_id}/finish")
+    async def admin_games_finish(
+        game_id: str, body: FinishIn, x_admin_secret: Annotated[str | None, Header()] = None
+    ) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        p = _sim_provider()
+        if isinstance(p, JSONResponse):
+            return p
+        if not await app.state.repo.finish_sim_game(game_id, body.home_score, body.away_score):
+            return _err(404, "NOT_FOUND", "unknown game_id")
+        logger.info("admin.game_finished", gameId=game_id)
+        result = await p.get_result(game_id)
+        return {"ok": True, "result": result.__dict__}
+
+    @app.post("/admin/games/{game_id}/status")
+    async def admin_games_status(
+        game_id: str, body: StatusIn, x_admin_secret: Annotated[str | None, Header()] = None
+    ) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        p = _sim_provider()
+        if isinstance(p, JSONResponse):
+            return p
+        if not await app.state.repo.set_sim_game_status(game_id, body.status):
+            return _err(404, "NOT_FOUND", "unknown game_id")
+        logger.info("admin.game_status", gameId=game_id, status=body.status)
+        return {"ok": True, "game_id": game_id, "status": await p.get_status(game_id)}
 
     @app.get("/health")
     async def health() -> Any:

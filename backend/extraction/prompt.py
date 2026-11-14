@@ -5,6 +5,7 @@ from datetime import date, timedelta
 FIELD_LABELS = {
     "team": "which game the bet is on",
     "date": "the game date",
+    "confirm": "a YES/NO or a number choosing one of the games it was offered",
 }
 
 

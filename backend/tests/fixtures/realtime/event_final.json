@@ -1,0 +1,135 @@
+{
+  "success": true,
+  "data": {
+    "id": "401873052",
+    "uid": "s:20~l:28~e:401873052",
+    "name": "Washington Commanders at New York Giants",
+    "shortName": "WSH @ NYG",
+    "date": "2026-11-13T01:15Z",
+    "status": {
+      "state": "post",
+      "completed": true,
+      "period": 4,
+      "clock": "0:00",
+      "detail": "Final",
+      "halftime": false,
+      "firstHalfEnded": true
+    },
+    "homeTeam": {
+      "id": "19",
+      "name": "New York Giants",
+      "abbreviation": "NYG",
+      "logo": "https://realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGDVQOSkoYVg",
+      "color": "003c7f",
+      "alternateColor": "c9243f",
+      "winner": false,
+      "score": 21
+    },
+    "awayTeam": {
+      "id": "28",
+      "name": "Washington Commanders",
+      "abbreviation": "WSH",
+      "logo": "https://realtimesportsapi.com/api/images/proxy?id=GgcVSgNPTUMITUgaFFQVVVQXBVwOHV5LRQBZD1lbBllDXR0HVl9AUlxGFF4BSkoYVg",
+      "color": "5a1414",
+      "alternateColor": "ffb612",
+      "winner": true,
+      "score": 24
+    },
+    "competition": {
+      "attendance": 80450,
+      "neutralSite": false,
+      "conferenceCompetition": false,
+      "divisionCompetition": false,
+      "playByPlayAvailable": true,
+      "highlightsAvailable": true
+    },
+    "venue": {
+      "id": "3839",
+      "name": "MetLife Stadium",
+      "city": "East Rutherford",
+      "state": "NJ",
+      "indoor": false,
+      "grass": false
+    },
+    "notes": [],
+    "season": {
+      "year": 2026,
+      "displayName": "2026",
+      "type": {
+        "id": "2",
+        "name": "Regular Season",
+        "abbreviation": "reg"
+      },
+      "week": {
+        "number": 10,
+        "startDate": "2026-11-11T08:00Z",
+        "endDate": "2026-11-18T07:59Z",
+        "text": "Week 10"
+      }
+    },
+    "broadcasts": [
+      {
+        "network": "Prime Video",
+        "type": "Streaming"
+      }
+    ],
+    "officials": [
+      {
+        "id": "17692",
+        "fullName": "Greg Yette",
+        "displayName": "Greg Yette",
+        "order": 1,
+        "position": "Back Judge"
+      },
+      {
+        "id": "2579424",
+        "fullName": "David Meslow",
+        "displayName": "David Meslow",
+        "order": 2,
+        "position": "Side Judge"
+      },
+      {
+        "id": "3055007",
+        "fullName": "Patrick Turner",
+        "displayName": "Patrick Turner",
+        "order": 3,
+        "position": "Down Judge"
+      },
+      {
+        "id": "3055970",
+        "fullName": "Bryan Neale",
+        "displayName": "Bryan Neale",
+        "order": 4,
+        "position": "Umpire"
+      },
+      {
+        "id": "3055971",
+        "fullName": "Kevin Codey",
+        "displayName": "Kevin Codey",
+        "order": 5,
+        "position": "Line Judge"
+      },
+      {
+        "id": "4251333",
+        "fullName": "Brad Rogers",
+        "displayName": "Brad Rogers",
+        "order": 6,
+        "position": "Referee"
+      },
+      {
+        "id": "4693715",
+        "fullName": "Joe Blubaugh",
+        "displayName": "Joe Blubaugh",
+        "order": 7,
+        "position": "Field Judge"
+      }
+    ]
+  },
+  "meta": {
+    "rateLimit": {
+      "limit": 1000,
+      "remaining": 996,
+      "reset": 1796083199999
+    }
+  }
+}
