@@ -89,6 +89,22 @@ class SimulatedProvider:
         await self.repo.replace_sim_games(self._rows())
         return True
 
+    async def add_game(self, home_id: str, away_id: str, minutes_from_now: int) -> Game:
+        """Dev helper (admin endpoint): one extra game kicking off `minutes_from_now` minutes from now."""
+        for tid in (home_id, away_id):
+            if tid not in self.teams.teams:
+                raise KeyError(tid)
+        kickoff = (self.now() + timedelta(minutes=minutes_from_now)).replace(second=0, microsecond=0)
+        row = {
+            "game_id": f"sim:{away_id}-{home_id}-{int(kickoff.timestamp())}",
+            "league": self.teams.teams[home_id].league,
+            "home_id": home_id, "home_name": self.teams.name(home_id),
+            "away_id": away_id, "away_name": self.teams.name(away_id),
+            "kickoff_utc": kickoff,
+        }
+        await self.repo.insert_sim_game(row)
+        return row_to_game({**row, "status": "scheduled"})
+
     async def reset(self) -> int:
         rows = self._rows()
         await self.repo.replace_sim_games(rows)

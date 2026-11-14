@@ -6,6 +6,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from games.models import Game
+from markets.money import bps_label, usd_label
 
 EXAMPLE = "create a bet for ASU vs Texas Tech"
 
@@ -73,5 +74,60 @@ CONFIRM_NO = "OK, which game did you mean? For example: ASU vs Texas Tech."
 GAME_STARTED = "That game has already started, so it cannot be bet on. Which game did you mean?"
 
 
-def confirmed(game: Game, tz: str) -> str:
-    return f"Game confirmed: {game_line(game, tz)}. Next I will create your deposit link."
+GAME_UNAVAILABLE = "That game is no longer on the schedule, so it cannot be bet on. Which game did you mean?"
+
+
+def funding_closed(minutes: int) -> str:
+    return (
+        f"That game starts too soon to open a bet, because betting closes {minutes} minutes before kickoff. "
+        "Which game did you mean?"
+    )
+
+
+MARKET_FAILED = "Sorry, I could not open that bet. Nothing was charged. Please start again in a few minutes."
+
+
+def _hours(n: int) -> str:
+    return "an hour" if n == 1 else f"{n} hours"
+
+
+def fee_line(fee_bps: int) -> str:
+    if fee_bps == 0:
+        return "There is no fee."
+    return f"A {bps_label(fee_bps)} fee on the losing side covers operating costs."
+
+
+def market_open(bet, tz: str, grace_hours: int, url: str) -> str:
+    """The one text the proposer gets when the market opens. `bet` is a repository.Bet with market fields set."""
+    return (
+        f"Your bet is open: {bet.away_name} at {bet.home_name}, {when(bet.kickoff_utc, tz)}.\n"
+        f"Betting closes {when(bet.funding_closes_at, tz)}.\n"
+        "Forward this link to anyone who wants in. Each person picks a side and their own amount "
+        f"from {usd_label(bet.min_stake_base)} to {usd_label(bet.max_stake_base)}.\n"
+        f"{fee_line(bet.fee_bps)}\n"
+        f"The link stays live until {_hours(grace_hours)} after payouts and shows live odds and results.\n"
+        f"{url}"
+    )
+
+
+def market_exists(bet, tz: str, grace_hours: int, url: str) -> str:
+    """Proposer confirms a game that already has an active market: resend what they need."""
+    if bet.status == "open":
+        return "You already have a bet open on that game.\n" + market_open(bet, tz, grace_hours, url)
+    return f"You already have a bet on that game and betting is closed. Here is the link:\n{url}"
+
+
+def market_locked(bet, side_totals: tuple[int, int]) -> str:
+    return (
+        f"Betting is closed for {bet.away_name} at {bet.home_name}. "
+        f"The pool is {usd_label(sum(side_totals))}: {usd_label(side_totals[0])} on {bet.away_name} "
+        f"and {usd_label(side_totals[1])} on {bet.home_name}. The bet is locked until the game ends."
+    )
+
+
+def market_refunded(bet) -> str:
+    return (
+        f"Betting is closed for {bet.away_name} at {bet.home_name}. "
+        "The bet did not have people on both sides, so everyone is refunded. Nothing was charged."
+    )
+

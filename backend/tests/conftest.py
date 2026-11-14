@@ -36,6 +36,7 @@ MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 TEST_SCHEDULE = Path(__file__).resolve().parent / "fixtures" / "schedule_test.json"
 GATEWAY_SECRET = "test-gateway-secret"
 ADMIN_SECRET = "test-admin-secret"
+SIGNING_SECRET = "test-signing-secret-0123456789abcdef"
 
 
 def _free_port() -> int:
@@ -156,6 +157,9 @@ def settings() -> Settings:
         log_level="debug",
         anthropic_api_key="test-anthropic-key",
         local_timezone="America/Phoenix",
+        link_signing_secret=SIGNING_SECRET,
+        deposit_page_url="https://deposit.test",
+        deposit_page_origin="https://deposit.test",
     )
 
 
@@ -204,13 +208,29 @@ def extractor() -> FakeExtractor:
 
 
 @pytest.fixture
-async def client(settings, repo, gateway, logs, extractor, clock, provider):
-    app = create_app(
+async def app(settings, repo, gateway, logs, extractor, clock, provider):
+    application = create_app(
         settings, repo=repo, gateway=gateway, logger=logs.logger, extractor=extractor, provider=provider, now=clock
     )
-    app.state.test_provider = provider
+    application.state.test_provider = provider
+    return application
+
+
+@pytest.fixture
+async def client(app):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://backend.test") as c:
         yield c
+
+
+@pytest.fixture
+def market(app):
+    """The MarketService the app uses (mock chain on the test schema)."""
+    return app.state.get_market()
+
+
+@pytest.fixture
+def chain(market):
+    return market.chain
 
 
 @pytest.fixture

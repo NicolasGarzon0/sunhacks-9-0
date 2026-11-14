@@ -18,9 +18,11 @@ GW = {"X-Gateway-Secret": GATEWAY_SECRET}
 ADMIN = {"X-Admin-Secret": ADMIN_SECRET}
 
 OFFER_CARDS = "I found Seattle Seahawks at Arizona Cardinals, Sunday Nov 15, 2:05 PM MST. Is this the game? Reply YES or NO."
-CONFIRMED_CARDS = (
-    "Game confirmed: Seattle Seahawks at Arizona Cardinals, Sunday Nov 15, 2:05 PM MST. Next I will create your deposit link."
+OPENED_CARDS = (  # the market link text (chunk 4); the rest of it is covered in test_open_market
+    "Your bet is open: Seattle Seahawks at Arizona Cardinals, Sunday Nov 15, 2:05 PM MST.\n"
+    "Betting closes Sunday Nov 15, 1:05 PM MST.\n"
 )
+EXISTING_CARDS = "You already have a bet open on that game.\n" + OPENED_CARDS
 OFFER_ASU = (
     "I found these games:\n"
     "1. BYU at Arizona State, Tuesday Nov 17, 5:00 PM MST\n"
@@ -62,12 +64,12 @@ def chat(client, fake_gateway, roster):
 async def test_one_candidate_yes_stores_bet_and_deletes_draft(chat, extractor, repo):
     extractor.push(team="cardinals")
     assert await chat.say("create a bet for the cardinals") == OFFER_CARDS
-    assert await chat.say("YES") == CONFIRMED_CARDS
+    assert (await chat.say("YES")).startswith(OPENED_CARDS)
     assert len(extractor.calls) == 1  # confirmation parsed without the model
     assert await repo.get_draft(ALICE) is None
     [bet] = await repo.list_bets(ALICE)
     assert (bet.game_id, bet.status, bet.home_id, bet.away_name) == (
-        "sim:t-sea-ari", "game_confirmed", "nfl-ari", "Seattle Seahawks"
+        "sim:t-sea-ari", "open", "nfl-ari", "Seattle Seahawks"
     )
     assert bet.kickoff_utc == datetime(2026, 11, 15, 21, 5, tzinfo=timezone.utc)
 
@@ -76,14 +78,14 @@ async def test_one_candidate_yes_stores_bet_and_deletes_draft(chat, extractor, r
 async def test_yes_variants(chat, extractor, word):
     extractor.push(team="cardinals")
     await chat.say()
-    assert await chat.say(word) == CONFIRMED_CARDS
+    assert (await chat.say(word)).startswith(OPENED_CARDS)
 
 
 async def test_several_candidates_pick_by_number(chat, extractor, repo):
     extractor.push(team="asu")
     assert await chat.say("bet on asu") == OFFER_ASU
-    assert await chat.say("2") == (
-        "Game confirmed: Texas Tech at Arizona State, Saturday Nov 21, 7:30 PM MST. Next I will create your deposit link."
+    assert (await chat.say("2")).startswith(
+        "Your bet is open: Texas Tech at Arizona State, Saturday Nov 21, 7:30 PM MST.\n"
     )
     assert [b.game_id for b in await repo.list_bets(ALICE)] == ["sim:t-ttu-asu"]
 
@@ -200,7 +202,7 @@ async def test_no_then_correction(chat, extractor, repo):
     assert d.pending_field == "team" and d.candidates is None
     extractor.push("reply_to_pending", team="cardinals")
     assert await chat.say("the cardinals game") == OFFER_CARDS
-    assert await chat.say("yes") == CONFIRMED_CARDS
+    assert (await chat.say("yes")).startswith(OPENED_CARDS)
 
 
 async def test_invalid_answer_twice_explains(chat, extractor, repo):
@@ -213,7 +215,7 @@ async def test_invalid_answer_twice_explains(chat, extractor, repo):
     extractor.push("other")
     assert (await chat.say("idk")).startswith("Please reply YES")
     assert await repo.list_bets(ALICE) == []
-    assert await chat.say("yes") == CONFIRMED_CARDS
+    assert (await chat.say("yes")).startswith(OPENED_CARDS)
 
 
 async def test_model_failure_during_confirm_is_a_miss(chat, extractor):
@@ -238,7 +240,7 @@ async def test_replace_no_while_waiting_reasks_offer(chat, extractor):
     extractor.push(team="asu")
     await chat.say()
     assert await chat.say("no") == T.REPLACE_KEPT_PREFIX + OFFER_CARDS
-    assert await chat.say("yes") == CONFIRMED_CARDS
+    assert (await chat.say("yes")).startswith(OPENED_CARDS)
 
 
 async def test_waiting_draft_expires(chat, extractor, repo, clock):
@@ -268,12 +270,11 @@ async def test_duplicate_confirmation_returns_existing_bet(chat, extractor, repo
     await chat.say("yes")
     extractor.push(team="cardinals")
     await chat.say()
-    assert await chat.say("yes") == CONFIRMED_CARDS
+    assert (await chat.say("yes")).startswith(EXISTING_CARDS)
     bets = await repo.list_bets(ALICE)
     assert len(bets) == 1
-    created = [e["created"] for e in logs.events("bet.confirmed")]
-    assert created == [True, False]
-    assert {e["betId"] for e in logs.events("bet.confirmed")} == {bets[0].id}
+    assert [e["outcome"] for e in logs.events("bet.confirmed")] == ["opened", "existing"]
+    assert {e["betId"] for e in logs.events("market.opened")} == {bets[0].id}
 
 
 async def test_bets_are_per_proposer(chat, extractor, repo):

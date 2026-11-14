@@ -44,7 +44,8 @@ class Chat:
         assert r.status_code == 200
         new = self.gw.sends[before:]
         assert len(new) == 1, "exactly one reply per inbound message"
-        assert new[0]["to"] == handle and new[0]["idempotencyKey"] == f"reply:m-{self.n}"
+        key = new[0]["idempotencyKey"]
+        assert new[0]["to"] == handle and (key == f"reply:m-{self.n}" or key.startswith("bet:"))
         return new[0]["text"]
 
 
@@ -146,7 +147,7 @@ async def test_replace_unclear_answer(chat, extractor):
 async def test_confirmed_bet_lets_next_request_start_fresh(chat, extractor, repo):
     extractor.push(**GAME)
     assert await chat.say() == READBACK
-    assert (await chat.say("yes")).startswith("Game confirmed:")
+    assert (await chat.say("yes")).startswith("Your bet is open:")
     extractor.push(team="cardinals")
     assert await chat.say() == OFFER_CARDS  # no replace question: the confirmed bet is not a draft
 

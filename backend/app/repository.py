@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -41,14 +42,37 @@ class Bet:
     away_id: str
     away_name: str
     kickoff_utc: datetime
-    status: str
+    status: str  # game_confirmed | open | locked | settled | refunded | failed
     created_at: datetime
+    # market (chunk 4); side 0 = away team, side 1 = home team
+    side0_name: str | None = None
+    side1_name: str | None = None
+    chain_bet_id: str | None = None
+    fee_bps: int | None = None
+    treasury: str | None = None
+    min_stake_base: int | None = None
+    max_stake_base: int | None = None
+    max_participants: int | None = None
+    funding_closes_at: datetime | None = None
+    settle_after: datetime | None = None
+    opened_at: datetime | None = None
+    locked_at: datetime | None = None
+    settled_at: datetime | None = None
+    winning_side: int | None = None
+    total_pool_base: int | None = None
+    fee_paid_base: int | None = None
+    failure_reason: str | None = None
+    refund_reason: str | None = None
+    payouts_completed_at: datetime | None = None
 
 
 BET_COLUMNS = (
     "id::text as id, proposer_handle, game_id, league, home_id, home_name, away_id, away_name, "
-    "kickoff_utc, status, created_at"
+    "kickoff_utc, status, created_at, side0_name, side1_name, chain_bet_id, fee_bps, treasury, min_stake_base, "
+    "max_stake_base, max_participants, funding_closes_at, settle_after, opened_at, locked_at, settled_at, "
+    "winning_side, total_pool_base, fee_paid_base, failure_reason, refund_reason, payouts_completed_at"
 )
+ACTIVE_STATUSES = "('game_confirmed', 'open', 'locked')"  # the unique index predicate in migration 0005
 SIM_COLUMNS = (
     "game_id, league, home_id, home_name, away_id, away_name, kickoff_utc, status, home_score, away_score, official"
 )
@@ -175,6 +199,15 @@ class Repository:
                         rows,
                     )
 
+    async def insert_sim_game(self, row: dict[str, Any]) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into sim_games (game_id, league, home_id, home_name, away_id, away_name, kickoff_utc, status) "
+                "values (%(game_id)s, %(league)s, %(home_id)s, %(home_name)s, %(away_id)s, %(away_name)s, "
+                "%(kickoff_utc)s, 'scheduled') on conflict (game_id) do nothing",
+                row,
+            )
+
     async def find_sim_games(self, team_ids: list[str], start: datetime, end: datetime) -> list[dict]:
         """Scheduled games involving any of team_ids with kickoff in (start, end], soonest first."""
         async with self.pool.connection() as conn:
@@ -210,17 +243,27 @@ class Repository:
 
     # --- bets ---
 
-    async def create_or_get_bet(self, proposer_handle: str, game: dict) -> tuple[Bet, bool]:
-        """One active confirmed bet per game per proposer. Returns (bet, created)."""
+    async def create_or_get_bet(self, proposer_handle: str, game: dict, snapshot: dict) -> tuple[Bet, bool]:
+        """One active market (game_confirmed, open or locked) per game per proposer. Returns (bet, created).
+
+        `snapshot` is the config at creation time (stored so later config changes never touch the market):
+        fee_bps, treasury, min_stake_base, max_stake_base, max_participants, funding_closes_at, settle_after.
+        """
         async with self.pool.connection() as conn:
             cur = conn.cursor(row_factory=dict_row)
             await cur.execute(
                 "insert into bets (proposer_handle, game_id, league, home_id, home_name, away_id, away_name, "
-                "kickoff_utc, status) values (%s, %s, %s, %s, %s, %s, %s, %s, 'game_confirmed') "
-                f"on conflict (proposer_handle, game_id) where status = 'game_confirmed' do nothing returning {BET_COLUMNS}",
+                "kickoff_utc, status, side0_name, side1_name, fee_bps, treasury, min_stake_base, max_stake_base, "
+                "max_participants, funding_closes_at, settle_after) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, 'game_confirmed', %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                f"on conflict (proposer_handle, game_id) where status in {ACTIVE_STATUSES} do nothing "
+                f"returning {BET_COLUMNS}",
                 (
                     proposer_handle, game["game_id"], game["league"], game["home"]["id"], game["home"]["name"],
                     game["away"]["id"], game["away"]["name"], game["kickoff_utc"],
+                    game["away"]["name"], game["home"]["name"], snapshot["fee_bps"], snapshot["treasury"],
+                    snapshot["min_stake_base"], snapshot["max_stake_base"], snapshot["max_participants"],
+                    snapshot["funding_closes_at"], snapshot["settle_after"],
                 ),
             )
             row = await cur.fetchone()
@@ -228,7 +271,7 @@ class Repository:
                 return Bet(**row), True
             await cur.execute(
                 f"select {BET_COLUMNS} from bets where proposer_handle = %s and game_id = %s "
-                "and status = 'game_confirmed'",
+                f"and status in {ACTIVE_STATUSES}",
                 (proposer_handle, game["game_id"]),
             )
             return Bet(**(await cur.fetchone())), False  # type: ignore[arg-type]
@@ -240,3 +283,102 @@ class Repository:
                 f"select {BET_COLUMNS} from bets where proposer_handle = %s order by created_at", (proposer_handle,)
             )
             return [Bet(**r) for r in await cur.fetchall()]
+
+    async def get_bet(self, bet_id: str) -> Bet | None:
+        try:
+            uuid.UUID(str(bet_id))
+        except ValueError:
+            return None
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(f"select {BET_COLUMNS} from bets where id = %s", (bet_id,))
+            row = await cur.fetchone()
+            return Bet(**row) if row else None
+
+    async def _transition(self, sql: str, params: tuple) -> bool:
+        async with self.pool.connection() as conn:
+            return (await conn.execute(sql, params)).rowcount == 1
+
+    # Conditional status changes: each returns True only for the call that actually made the change.
+
+    async def set_bet_open(self, bet_id: str, chain_bet_id: str, at: datetime) -> bool:
+        return await self._transition(
+            "update bets set status = 'open', chain_bet_id = %s, opened_at = %s where id = %s and status = 'game_confirmed'",
+            (chain_bet_id, at, bet_id),
+        )
+
+    async def fail_bet(self, bet_id: str, reason: str) -> bool:
+        return await self._transition(
+            "update bets set status = 'failed', failure_reason = %s where id = %s and status in ('game_confirmed', 'open')",
+            (reason[:200], bet_id),
+        )
+
+    async def lock_bet(self, bet_id: str, total_pool_base: int, at: datetime) -> bool:
+        return await self._transition(
+            "update bets set status = 'locked', total_pool_base = %s, locked_at = %s where id = %s and status = 'open'",
+            (total_pool_base, at, bet_id),
+        )
+
+    async def refund_bet(self, bet_id: str, reason: str, total_pool_base: int, at: datetime) -> bool:
+        """open or locked -> refunded, no fee (fee_paid_base = 0). `at` is stored as settled_at (when the market closed out)."""
+        return await self._transition(
+            "update bets set status = 'refunded', refund_reason = %s, total_pool_base = %s, fee_paid_base = 0, "
+            "settled_at = %s where id = %s and status in ('open', 'locked')",
+            (reason, total_pool_base, at, bet_id),
+        )
+
+    async def mark_payouts_complete(self, bet_id: str, at: datetime) -> bool:
+        return await self._transition(
+            "update bets set payouts_completed_at = %s where id = %s and status in ('settled', 'refunded')",
+            (at, bet_id),
+        )
+
+    # --- participants (display names) ---
+
+    async def set_display_name(self, bet_id: str, wallet: str, name: str) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into bet_participants (bet_id, wallet, display_name) values (%s, %s, %s) "
+                "on conflict (bet_id, wallet) do update set display_name = excluded.display_name",
+                (bet_id, wallet, name),
+            )
+
+    async def display_names(self, bet_id: str) -> dict[str, str]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "select wallet, display_name from bet_participants where bet_id = %s and display_name is not null",
+                (bet_id,),
+            )
+            return {w: n for w, n in await cur.fetchall()}
+
+    # --- proposer notices (durable "send once") ---
+
+    async def ensure_notice(self, bet_id: str, kind: str, key: str) -> tuple[str, int]:
+        """Create the notice row if missing; returns (status, attempts)."""
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into bet_notices (bet_id, kind, idempotency_key, status) values (%s, %s, %s, 'pending') "
+                "on conflict do nothing",
+                (bet_id, kind, key),
+            )
+            row = await (await conn.execute(
+                "select status, attempts from bet_notices where bet_id = %s and kind = %s", (bet_id, kind)
+            )).fetchone()
+            return row[0], row[1]
+
+    async def mark_notice(self, bet_id: str, kind: str, status: str, error: str | None = None) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bet_notices set status = %s, attempts = attempts + 1, last_error = %s, "
+                "sent_at = case when %s = 'sent' then now() else sent_at end where bet_id = %s and kind = %s",
+                (status, error, status, bet_id, kind),
+            )
+
+    async def list_notices(self, bet_id: str) -> list[dict]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                "select kind, idempotency_key, status, attempts, last_error from bet_notices where bet_id = %s order by kind",
+                (bet_id,),
+            )
+            return list(await cur.fetchall())

@@ -43,6 +43,8 @@ Supabase SQL editor (or via the Supabase MCP): `0001_init` (inbound_messages, ro
 (one bet request draft per sender handle) `0003_drafts_game_only` (status `collecting|ready`, pending
 field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`). All tables have RLS enabled with no policies, so the
 anon/authenticated API keys see nothing; the backend connects as the table owner.
+Migration `0005_markets` is safe to run more than once. The code does not rely on column defaults or on
+`bet_notices.updated_at`, so it also works on a database whose 0005 tables were created by an earlier variant.
 
 ## Run
 ```sh
@@ -110,9 +112,8 @@ Package `games/`:
     "Replace it? YES/NO" question.
   - NO asks which game was meant.
   - A game that kicked off before the confirmation is refused.
-  - Confirming stores a `bets` row (`status = game_confirmed`), deletes the draft, and replies "Game
-    confirmed: … Next I will create your deposit link."
-  - Confirming the same game twice returns the existing bet.
+  - Confirming opens a pool market (chunk 4, below) and texts the proposer the bet link.
+  - Confirming the same game twice returns the existing market's link.
   - If the provider fails, the sender gets a fixed apology and the draft stays collecting.
 - **Dev tool:** `.venv/bin/python scripts/try_lookup.py asu --opponent "texas tech" [--date YYYY-MM-DD]`
   prints the candidates and the reply. It sends nothing.
@@ -151,6 +152,67 @@ Real provider (`GAME_PROVIDER=realtime`, NFL only), `games/realtime.py`:
 > **Chunk 5 warning, provisional finals:** on the real provider a `final` result can be corrected after it
 > is first reported. Settlement must treat `final` as provisional: wait a few minutes, re-read the
 > result, and settle only if it is unchanged.
+
+## Pool markets (chunk 4)
+
+**Pool design.** One shared pool per market. Anyone with the link picks a side (side 0 = away team, side 1 =
+home team) and deposits their own amount. Min applies per deposit, max to a wallet's total position, a wallet
+may top up one side but never hold both. The fee is `floor(losing_pool * fee_bps / 10000)`, charged only when a
+market settles with a winner; `distributable = total - fee`; a winner gets `floor(stake * distributable /
+winning_total)` (never below their stake; rounding dust stays in the vault). One sided markets, fewer than 2
+participants, cancelled games and ties refund everyone with no fee. All money is integer USDC base units (6
+decimals); dollars exist only at the API and config boundary. `markets/pool_math.py` is the single source of
+truth. The backend never holds user funds or keys: deposits come from the user's wallet via the deposit page
+(the mock simulates this).
+
+**Env vars** (placeholders in `.env.example`): `LINK_SIGNING_SECRET` (required, 32+ chars), `DEPOSIT_PAGE_URL`
+(required), `DEPOSIT_PAGE_ORIGIN` (CORS; default origin of the URL), `MIN_STAKE_USD=1`, `MAX_STAKE_USD=20`,
+`MAX_PARTICIPANTS=20`, `FEE_BPS=500` (above 1000 fails at startup), `TREASURY_PUBKEY` (mock falls back to a
+fake constant), `LINK_GRACE_HOURS=2`, `FUNDING_MINUTES_BEFORE_KICKOFF=60`, `SETTLE_HOURS_AFTER_KICKOFF=6`
+(stored for chunk 5), `CHAIN_MODE=mock` (`real` fails with a clear message for now). Fee, treasury, limits and
+times are copied onto the bet at creation, so config changes never touch an open market.
+
+**State machine** (lowercase in DB and API): `game_confirmed -> open -> locked -> settled`, or
+`open|locked -> refunded`, or `game_confirmed|open -> failed`. `close_funding` (idempotent, serialized per bet)
+locks when both sides have money and at least 2 participants, otherwise refunds (`too_few_participants` or
+`one_sided`). It runs early when `max_participants` is reached (`maybe_close_when_full` after every deposit),
+via `POST /admin/bets/{id}/close_funding`, and lazily when a deposit arrives after `funding_closes_at`
+(no worker yet). Each proposer text goes out once, recorded in `bet_notices` (keys `bet:{id}:link|locked|
+refunded|failed`), because the gateway's own idempotency is in memory only.
+
+**Link lifetime.** `DEPOSIT_PAGE_URL/b/<token>`, token = signed bet id (itsdangerous), multi use. Valid while
+the signature is good, the bet exists, and now is before `payouts_completed_at + LINK_GRACE_HOURS`, else
+`settle_after + 7 days`. Funding closing never invalidates it. Bad token: 404 `BAD_TOKEN`; expired: 410
+`LINK_EXPIRED`. Logs carry the bet id, never the token.
+
+**Public API** (`/markets`, CORS for `DEPOSIT_PAGE_ORIGIN` only; `{ok:true,...}` or `{ok:false,code,detail}`):
+- `GET /markets/{t}` status, teams, kickoff, funding_closes_at, pools, participant_count, limits, fee_bps,
+  multipliers; plus `game_pending` (locked), `winning_side/fee_paid/distributable/final_multiplier` (settled),
+  `refund_reason` (refunded).
+- `GET /markets/{t}/participants`, `GET /markets/{t}/position?wallet=`, `POST /markets/{t}/participants`
+  `{wallet, display_name}` (max 24 chars, trimmed, no URLs).
+- `GET /markets/{t}/preview?side=1&amount_usd=20` (open only), `POST /markets/{t}/deposits`
+  `{wallet, side, amount_usd, display_name?}` (open only, `CHAIN_MODE=mock` only, else 404).
+- Example: `{"ok":true,"status":"open","pools":{"side0_base":10000000,"side1_base":10000000,"side0_usd":"10.00",
+  "side1_usd":"10.00"},"multipliers":{"side0":"1.95","side1":"1.95"},"fee_bps":500,...}`.
+
+**Error codes.** Chain: `BELOW_MIN ABOVE_MAX MARKET_FULL ALREADY_OTHER_SIDE MARKET_NOT_OPEN WRONG_STATE
+ALREADY_CLAIMED NOT_A_WINNER NOT_FOUND INVALID_WALLET INVALID_SIDE`. In the public API `INVALID_WALLET` and
+`INVALID_SIDE` are HTTP 400 (malformed input); every other chain error is 409 (`MARKET_NOT_OPEN` also returns
+the current `status`). API: `BAD_TOKEN` 404, `LINK_EXPIRED` 410, `BAD_REQUEST` / `BAD_DISPLAY_NAME` 400.
+
+**Admin** (`X-Admin-Secret`): `GET /admin/bets/{id}`, `POST /admin/bets/{id}/close_funding`, dev only
+`POST /admin/bets/{id}/mark_payouts_complete`, and (simulated provider) `POST /admin/games`
+`{home_id, away_id, minutes_from_now}`.
+
+**Handoff, chunk 5.** The worker must call `close_funding` at `funding_closes_at` (marked `TODO(chunk 5)` in
+`markets/service.py`), retry `bet_notices` rows that are `pending` or `failed`, then at `settle_after` re-read
+the game (finals are provisional), call `chain.settle(winner)` or `refund_all` (`cancelled`, `tie`), trigger
+claims, send the result text, and set `payouts_completed_at` once every position is claimed.
+**Handoff, real chain and deposit page.** Implement `ChainClient` (`markets/chain.py`) against the program and
+wire `build_chain_client`; drop the `mock_chain_*` tables; the page reads `/markets/{t}`, previews via
+`/preview`, signs the deposit itself, then `POST /markets/{t}/participants` for the display name. Names are
+unauthenticated (no wallet signature) until the page adds one.
 
 ## Endpoints
 - `POST /inbound` (`X-Gateway-Secret`): 401 bad secret, 400 bad payload, 200 duplicate (no-op), 200 accepted

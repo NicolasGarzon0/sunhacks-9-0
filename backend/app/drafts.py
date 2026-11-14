@@ -15,6 +15,7 @@ from extraction.client import MAX_INPUT_CHARS
 from extraction.schema import Extraction
 from games.models import Game
 from games.provider import GameProvider
+from markets.service import MarketService
 
 from . import templates as T
 from .confirm import parse_confirmation
@@ -68,6 +69,7 @@ class BetFlow:
         logger: Logger,
         *,
         provider: GameProvider,
+        market: MarketService,
         tz: str,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -75,6 +77,7 @@ class BetFlow:
         self.gateway = gateway
         self.extractor = extractor
         self.provider = provider
+        self.market = market
         self.logger = logger
         self.tz = tz
         self.now = now or (lambda: datetime.now(timezone.utc))
@@ -89,6 +92,8 @@ class BetFlow:
         lock = self._locks.setdefault(proposer.handle, asyncio.Lock())
         async with lock:
             reply = await self._process(proposer, text, message_id)
+            if reply is None:  # the market notice (link, failure) already went out through bet_notices
+                return
             result = await self.gateway.send_text(proposer.handle, reply, f"reply:{message_id}")
         if not result.ok:
             self.logger.warn("bet.reply_failed", handle=proposer.handle, messageId=message_id, code=result.code)
@@ -101,7 +106,7 @@ class BetFlow:
             return None
         return draft
 
-    async def _process(self, proposer: RosterEntry, text: str, message_id: str) -> str:
+    async def _process(self, proposer: RosterEntry, text: str, message_id: str) -> str | None:
         log = dict(handle=proposer.handle, messageId=message_id)
         if len(text) > MAX_INPUT_CHARS:
             self.logger.info("bet.too_long", textLength=len(text), **log)
@@ -158,7 +163,7 @@ class BetFlow:
             return T.offer([Game.from_json(c) for c in draft.candidates], self.tz)
         return T.question(draft.pending_field or "team")
 
-    async def _confirm(self, proposer: RosterEntry, draft: Draft, text: str, log: dict) -> str:
+    async def _confirm(self, proposer: RosterEntry, draft: Draft, text: str, log: dict) -> str | None:
         games = [Game.from_json(c) for c in draft.candidates or []]
         answer = parse_confirmation(text, len(games))
         if answer is None:
@@ -181,15 +186,18 @@ class BetFlow:
             return T.CONFIRM_NO
 
         game = games[answer.index]
-        if game.kickoff_utc <= self.now():
+        result = await self.market.open_market(proposer.handle, game)
+        self.logger.info("bet.confirmed", gameId=game.game_id, outcome=result.kind, **log)
+        if result.kind == "lookup_error":
+            await self._touch(draft)  # keep the draft: answering YES again retries
+            return result.text
+        if result.kind in ("game_started", "game_unavailable", "funding_closed"):
             self._back_to_team(draft)
             await self._touch(draft)
-            self.logger.info("bet.confirm_started", gameId=game.game_id, **log)
-            return T.GAME_STARTED
-        bet, created = await self.repo.create_or_get_bet(proposer.handle, game.to_json())
-        await self.repo.delete_draft(proposer.handle)
-        self.logger.info("bet.confirmed", betId=bet.id, gameId=game.game_id, created=created, **log)
-        return T.confirmed(game, self.tz)
+            return result.text
+        if not result.keep_draft:
+            await self.repo.delete_draft(proposer.handle)
+        return result.text  # None for opened or failed: the proposer notice was sent by the market service
 
     @staticmethod
     def _back_to_team(draft: Draft) -> None:
@@ -213,7 +221,8 @@ class BetFlow:
             self.logger.warn("bet.lookup_failed", provider=self.provider.name, detail=type(e).__name__, **log)
             return T.LOOKUP_APOLOGY
         now = self.now()
-        games = [g for g in found if g.status == "scheduled" and g.kickoff_utc > now]
+        lead = self.market.funding_lead  # a game whose betting window already closed cannot open a market
+        games = [g for g in found if g.status == "scheduled" and g.kickoff_utc - lead > now]
         games.sort(key=lambda g: g.kickoff_utc)
         games = games[:MAX_CANDIDATES]
         self.logger.info("bet.lookup", provider=self.provider.name, found=len(found), offered=len(games), **log)
