@@ -12,11 +12,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_FILE = BACKEND_DIR.parent / ".env"
 
-REQUIRED = ("DATABASE_URL", "GATEWAY_SHARED_SECRET", "ADMIN_SECRET")
+REQUIRED = ("DATABASE_URL", "GATEWAY_SHARED_SECRET", "ADMIN_SECRET", "ANTHROPIC_API_KEY")
+DEFAULT_HAIKU_MODEL = "claude-haiku-5-5"  # verified in the Claude API docs (model table, Haiku 5.5 guide)
 LOG_LEVELS = ("debug", "info", "warn", "error")
 
 
@@ -32,11 +34,17 @@ class Settings:
     admin_secret: str
     port: int
     log_level: str
+    anthropic_api_key: str = ""
+    haiku_model: str = DEFAULT_HAIKU_MODEL
+    local_timezone: str = "America/Phoenix"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
 
     def __repr__(self) -> str:  # never leak secrets through repr
-        return f"Settings(gateway_url={self.gateway_url!r}, port={self.port}, log_level={self.log_level!r})"
+        return (
+            f"Settings(gateway_url={self.gateway_url!r}, port={self.port}, log_level={self.log_level!r}, "
+            f"haiku_model={self.haiku_model!r}, local_timezone={self.local_timezone!r})"
+        )
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -95,6 +103,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
     if not 1 <= port <= 65535:
         raise ConfigError("BACKEND_PORT must be an integer between 1 and 65535")
 
+    tz = get("LOCAL_TIMEZONE") or "America/Phoenix"
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError("LOCAL_TIMEZONE is not a valid IANA timezone (e.g. America/Phoenix)") from None
+
     log_level = (get("LOG_LEVEL") or "info").lower()
     if log_level not in LOG_LEVELS:
         log_level = "info"
@@ -106,6 +120,9 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         admin_secret=get("ADMIN_SECRET"),  # type: ignore[arg-type]
         port=port,
         log_level=log_level,
+        anthropic_api_key=get("ANTHROPIC_API_KEY"),  # type: ignore[arg-type]
+        haiku_model=get("HAIKU_MODEL") or DEFAULT_HAIKU_MODEL,
+        local_timezone=tz,
         supabase_url=get("SUPABASE_URL"),
         supabase_service_role_key=get("SUPABASE_SERVICE_ROLE_KEY"),
     )

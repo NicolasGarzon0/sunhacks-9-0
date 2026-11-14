@@ -14,6 +14,7 @@ import socket
 import subprocess
 import tempfile
 import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -27,6 +28,7 @@ from app.gateway_client import GatewayClient
 from app.logging import Logger
 from app.main import create_app
 from app.repository import Repository
+from extraction.schema import Extraction
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 GATEWAY_SECRET = "test-gateway-secret"
@@ -149,11 +151,57 @@ def settings() -> Settings:
         admin_secret=ADMIN_SECRET,
         port=8788,
         log_level="debug",
+        anthropic_api_key="test-anthropic-key",
+        local_timezone="America/Phoenix",
     )
 
 
+# Saturday 2026-11-14, 12:00 in Phoenix (UTC-7, no DST).
+FIXED_NOW = datetime(2026, 11, 14, 19, 0, tzinfo=timezone.utc)
+TODAY = date(2026, 11, 14)
+
+
+class Clock:
+    def __init__(self, now: datetime = FIXED_NOW) -> None:
+        self.current = now
+
+    def __call__(self) -> datetime:
+        return self.current
+
+
 @pytest.fixture
-async def client(settings, repo, gateway, logs):
-    app = create_app(settings, repo=repo, gateway=gateway, logger=logs.logger)
+def clock() -> Clock:
+    return Clock()
+
+
+class FakeExtractor:
+    """Scripted extractor: queue Extraction objects (or None for failure, or an Exception to raise)."""
+
+    def __init__(self) -> None:
+        self.queue: list[Any] = []
+        self.calls: list[dict[str, Any]] = []
+
+    def push(self, classification: str = "bet_proposal", **fields: Any) -> None:
+        self.queue.append(Extraction(classification=classification, **fields))
+
+    def fail(self) -> None:
+        self.queue.append(None)
+
+    async def extract(self, text, today, tz, pending_field=None):
+        self.calls.append({"text": text, "today": today, "tz": tz, "pending_field": pending_field})
+        item = self.queue.pop(0) if self.queue else None
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+@pytest.fixture
+def extractor() -> FakeExtractor:
+    return FakeExtractor()
+
+
+@pytest.fixture
+async def client(settings, repo, gateway, logs, extractor, clock):
+    app = create_app(settings, repo=repo, gateway=gateway, logger=logs.logger, extractor=extractor, now=clock)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://backend.test") as c:
         yield c

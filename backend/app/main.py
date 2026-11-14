@@ -9,7 +9,7 @@ import asyncio
 import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 
 import psycopg
 from fastapi import BackgroundTasks, FastAPI, Header, Request
@@ -17,7 +17,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
+from extraction.client import HaikuExtractor
+
 from .config import Settings, load_settings
+from .drafts import BetFlow, Extractor
 from .db import make_pool
 from .gateway_client import GatewayClient
 from .handlers import Inbound, handle_inbound
@@ -56,8 +59,10 @@ def create_app(
     repo: Repository | None = None,
     gateway: GatewayClient | None = None,
     logger: Logger | None = None,
+    extractor: Extractor | None = None,
+    now: Callable[[], datetime] | None = None,
 ) -> FastAPI:
-    """Pass repo/gateway in tests; otherwise they are built from settings in the lifespan."""
+    """Pass repo/gateway/extractor in tests; otherwise they are built from settings in the lifespan."""
     settings = settings or load_settings()
     logger = logger or Logger(settings.log_level)
 
@@ -77,11 +82,19 @@ def create_app(
         if app.state.gateway is None:
             app.state.gateway = GatewayClient(settings.gateway_url, settings.gateway_shared_secret, logger)
             owns_gateway = True
-        app.state.tasks = set()
-        logger.info("backend.started", port=settings.port, gatewayUrl=settings.gateway_url)
+        owns_extractor = False
+        if app.state.extractor is None:
+            app.state.extractor = HaikuExtractor(settings.anthropic_api_key, settings.haiku_model, logger)
+            owns_extractor = True
+        logger.info(
+            "backend.started", port=settings.port, gatewayUrl=settings.gateway_url, model=settings.haiku_model,
+            timezone=settings.local_timezone,
+        )
         try:
             yield
         finally:
+            if owns_extractor:
+                await app.state.extractor.aclose()
             if owns_gateway:
                 await app.state.gateway.aclose()
             if pool is not None:
@@ -92,6 +105,16 @@ def create_app(
     app.state.repo = repo
     app.state.gateway = gateway
     app.state.logger = logger
+    app.state.extractor = extractor
+    app.state.flow = None
+
+    def get_flow() -> BetFlow:
+        if app.state.flow is None:
+            app.state.flow = BetFlow(
+                app.state.repo, app.state.gateway, app.state.extractor, logger,
+                tz=settings.local_timezone, now=now,
+            )
+        return app.state.flow
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -128,7 +151,7 @@ def create_app(
             "inbound.accepted", handle=payload.handle, messageId=payload.messageId, textLength=len(payload.text)
         )
         msg = Inbound(payload.messageId, payload.handle, payload.text, payload.receivedAt)
-        background.add_task(handle_inbound, msg, repo_, app.state.gateway, logger)
+        background.add_task(handle_inbound, msg, repo_, app.state.gateway, logger, get_flow())
         return {"ok": True}
 
     def _admin_denied(secret: str | None) -> JSONResponse | None:

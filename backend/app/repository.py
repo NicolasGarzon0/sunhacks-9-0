@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 
@@ -14,6 +15,16 @@ class RosterEntry:
     name: str
     display_name: str
     handle: str
+
+
+@dataclass
+class Draft:
+    handle: str
+    fields: dict
+    status: str  # collecting | ready
+    pending_field: str | None
+    pending_replacement: dict | None
+    updated_at: datetime
 
 
 def _entry(row: dict | None) -> RosterEntry | None:
@@ -79,3 +90,37 @@ class Repository:
                 (name.strip().lower(), display_name, handle),
             )
             return RosterEntry(**(await cur.fetchone()))  # type: ignore[arg-type]
+
+    async def get_draft(self, handle: str) -> Draft | None:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                "select handle, fields, status, pending_field, pending_replacement, updated_at "
+                "from drafts where handle = %s",
+                (handle,),
+            )
+            row = await cur.fetchone()
+            return Draft(**row) if row else None
+
+    async def save_draft(self, draft: Draft) -> None:
+        """Insert or replace the single draft for this proposer handle."""
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into drafts (handle, fields, status, pending_field, pending_replacement, updated_at) "
+                "values (%s, %s, %s, %s, %s, %s) "
+                "on conflict (handle) do update set fields = excluded.fields, status = excluded.status, "
+                "pending_field = excluded.pending_field, pending_replacement = excluded.pending_replacement, "
+                "updated_at = excluded.updated_at",
+                (
+                    draft.handle,
+                    Jsonb(draft.fields),
+                    draft.status,
+                    draft.pending_field,
+                    Jsonb(draft.pending_replacement) if draft.pending_replacement is not None else None,
+                    draft.updated_at,
+                ),
+            )
+
+    async def delete_draft(self, handle: str) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute("delete from drafts where handle = %s", (handle,))

@@ -12,20 +12,34 @@ def test_missing_values_are_all_named():
     with pytest.raises(ConfigError) as e:
         load_settings({}, env_file=None)
     msg = str(e.value)
-    for name in ("DATABASE_URL", "GATEWAY_SHARED_SECRET", "ADMIN_SECRET"):
+    for name in ("DATABASE_URL", "GATEWAY_SHARED_SECRET", "ADMIN_SECRET", "ANTHROPIC_API_KEY"):
         assert name in msg
 
 
 def test_defaults_and_repr_hides_secrets():
     s = load_settings(
-        {"DATABASE_URL": "postgresql://u:pw@h/db", "GATEWAY_SHARED_SECRET": "gsecret", "ADMIN_SECRET": "asecret"},
+        {"DATABASE_URL": "postgresql://u:pw@h/db", "GATEWAY_SHARED_SECRET": "gsecret", "ADMIN_SECRET": "asecret",
+         "ANTHROPIC_API_KEY": "sk-ant-secret"},
         env_file=None,
     )
     assert s.port == 8788 and s.gateway_url == "http://localhost:8787"
-    assert "pw" not in repr(s) and "gsecret" not in repr(s) and "asecret" not in repr(s)
+    assert "pw" not in repr(s) and "gsecret" not in repr(s) and "asecret" not in repr(s) and "sk-ant" not in repr(s)
+    assert s.haiku_model == "claude-haiku-5-5" and s.local_timezone == "America/Phoenix"
+    assert not hasattr(s, "max_stake_usd")
 
 
-BASE = {"DATABASE_URL": "x", "GATEWAY_SHARED_SECRET": "x", "ADMIN_SECRET": "x"}
+BASE = {"DATABASE_URL": "x", "GATEWAY_SHARED_SECRET": "x", "ADMIN_SECRET": "x", "ANTHROPIC_API_KEY": "x"}
+
+
+def test_missing_anthropic_key_fails_fast():
+    env = {k: v for k, v in BASE.items() if k != "ANTHROPIC_API_KEY"}
+    with pytest.raises(ConfigError, match="ANTHROPIC_API_KEY"):
+        load_settings(env, env_file=None)
+
+
+def test_bad_timezone():
+    with pytest.raises(ConfigError, match="LOCAL_TIMEZONE"):
+        load_settings({**BASE, "LOCAL_TIMEZONE": "Mars/Base"}, env_file=None)
 
 
 def test_bad_port():
@@ -42,7 +56,7 @@ def test_gateway_port_is_ignored():
 
 def test_env_file_parsing(tmp_path):
     f = tmp_path / ".env"
-    f.write_text('# c\nDATABASE_URL="postgresql://x"\nexport GATEWAY_SHARED_SECRET=g\nADMIN_SECRET=a\nPORT=8787\n')
+    f.write_text('# c\nDATABASE_URL="postgresql://x"\nexport GATEWAY_SHARED_SECRET=g\nADMIN_SECRET=a\nANTHROPIC_API_KEY=k\nPORT=8787\n')
     s = load_settings({}, env_file=f)
     assert s.database_url == "postgresql://x" and s.port == 8788
 

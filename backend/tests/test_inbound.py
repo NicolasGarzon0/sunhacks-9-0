@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from app.handlers import UNKNOWN_SENDER_REPLY
+from app.templates import HELP
 
 from .conftest import ADMIN_SECRET, GATEWAY_SECRET
 
@@ -36,13 +37,13 @@ async def test_bad_payload_returns_400(client, fake_gateway):
     assert fake_gateway.sends == []
 
 
-async def test_known_sender_gets_personalized_reply(client, repo, fake_gateway):
+async def test_known_sender_goes_to_bet_flow(client, repo, fake_gateway, extractor):
     await repo.upsert_roster("Alice", "Alice A", ALICE)
-    r = await client.post("/inbound", json=payload(text="bet you 5 bucks"), headers=GW)
+    extractor.push("other")
+    r = await client.post("/inbound", json=payload(text="hey"), headers=GW)
     assert r.status_code == 200
-    assert fake_gateway.sends == [
-        {"to": ALICE, "text": "Hi Alice A, the backend got: bet you 5 bucks", "idempotencyKey": "reply:m-1"}
-    ]
+    assert len(extractor.calls) == 1
+    assert fake_gateway.sends == [{"to": ALICE, "text": HELP, "idempotencyKey": "reply:m-1"}]
     assert fake_gateway.headers[0]["x-gateway-secret"] == GATEWAY_SECRET
 
 
