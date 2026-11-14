@@ -156,6 +156,9 @@ class MarketService:
 
     async def open_market(self, proposer_handle: str, game: dict) -> None:
         now = self.now()
+        kickoff_utc = game["kickoff_utc"]
+        if isinstance(kickoff_utc, str):
+            kickoff_utc = datetime.fromisoformat(kickoff_utc)
         values = {
             "side0_name": game["away"]["name"],
             "side1_name": game["home"]["name"],
@@ -164,10 +167,10 @@ class MarketService:
             "min_stake_base": self.settings.min_stake_base,
             "max_stake_base": self.settings.max_stake_base,
             "max_participants": self.settings.max_participants,
-            "funding_closes_at": game["kickoff_utc"] - timedelta(minutes=self.settings.funding_minutes_before_kickoff),
-            "settle_after": game["kickoff_utc"] + timedelta(hours=self.settings.settle_hours_after_kickoff),
+            "funding_closes_at": kickoff_utc - timedelta(minutes=self.settings.funding_minutes_before_kickoff),
+            "settle_after": kickoff_utc + timedelta(hours=self.settings.settle_hours_after_kickoff),
         }
-        if game["kickoff_utc"] <= now or values["funding_closes_at"] <= now:
+        if kickoff_utc <= now or values["funding_closes_at"] <= now:
             raise MarketError("GAME_NOT_OPEN", "that game is no longer available for betting", 409)
         market = await self.repo.create_or_get_market(proposer_handle, game, values)
         if market["status"] == "locked":
