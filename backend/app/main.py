@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Callable, Literal
 
 import psycopg
@@ -29,6 +29,9 @@ from .gateway_client import GatewayClient
 from .handlers import Inbound, handle_inbound
 from .logging import Logger, err_detail
 from .repository import Repository
+from .market_api import create_market_api
+from markets.chain import build_chain_client
+from markets.service import MarketError, MarketService
 
 NonEmpty = Annotated[str, StringConstraints(min_length=1, max_length=5000)]
 HandleStr = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=r"^\S+$")]
@@ -55,6 +58,12 @@ class RosterIn(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
     display_name: Annotated[str, StringConstraints(strip_whitespace=True, max_length=64)] | None = None
     handle: HandleStr
+
+
+class CreateGameIn(BaseModel):
+    minutes: int = Field(ge=1, le=20160)
+    home_name: str = Field(default="Arizona State", max_length=80)
+    away_name: str = Field(default="Texas Tech", max_length=80)
 
 
 def _secret_ok(given: str | None, expected: str) -> bool:
@@ -109,6 +118,11 @@ def create_app(
                     logger.info("games.seeded", provider="simulated")
             except Exception as e:
                 logger.error("games.seed_failed", detail=err_detail(e))
+        if app.state.market is None and settings.link_signing_secret and settings.deposit_page_url:
+            chain = build_chain_client(settings, app.state.repo.pool, now=now)
+            app.state.market = MarketService(
+                app.state.repo, chain, app.state.gateway, logger, settings, now=now
+            )
         logger.info(
             "backend.started", gameProvider=app.state.provider.name, port=settings.port, gatewayUrl=settings.gateway_url, model=settings.haiku_model,
             timezone=settings.local_timezone,
@@ -133,12 +147,17 @@ def create_app(
     app.state.extractor = extractor
     app.state.provider = provider
     app.state.flow = None
+    app.state.market = None
+    if repo is not None and gateway is not None and settings.link_signing_secret and settings.deposit_page_url:
+        app.state.market = MarketService(
+            repo, build_chain_client(settings, repo.pool, now=now), gateway, logger, settings, now=now
+        )
 
     def get_flow() -> BetFlow:
         if app.state.flow is None:
             app.state.flow = BetFlow(
                 app.state.repo, app.state.gateway, app.state.extractor, logger,
-                provider=app.state.provider, tz=settings.local_timezone, now=now,
+                provider=app.state.provider, market=app.state.market, tz=settings.local_timezone, now=now,
             )
         return app.state.flow
 
@@ -266,6 +285,61 @@ def create_app(
         database, gateway_ok = await asyncio.gather(db_ok(), app.state.gateway.health())
         status = "ok" if database and gateway_ok else "degraded"
         return {"status": status, "database": database, "gateway": gateway_ok}
+
+    if settings.deposit_page_origin:
+        app.mount("/markets", create_market_api(lambda: app.state.market, settings.deposit_page_origin))
+
+    @app.post("/admin/bets/{bet_id}/close_funding")
+    async def admin_close_funding(bet_id: str, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        if app.state.market is None:
+            return _err(409, "UNAVAILABLE", "market layer is not configured")
+        try:
+            await app.state.market.close_funding(bet_id)
+            return {"ok": True, "market": await app.state.market.view(await app.state.market.resolve(app.state.market.token_for(bet_id)))}
+        except MarketError as exc:
+            return _err(exc.status, exc.code, exc.detail)
+
+    @app.get("/admin/bets/{bet_id}")
+    async def admin_get_bet(bet_id: str, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        if app.state.market is None:
+            return _err(409, "UNAVAILABLE", "market layer is not configured")
+        market = await app.state.repo.get_market(bet_id)
+        if market is None:
+            return _err(404, "NOT_FOUND", "unknown bet")
+        return {
+            "ok": True,
+            "market": await app.state.market.view(market),
+            "participants": await app.state.market.participants(market),
+            "positions": [p.__dict__ for p in await app.state.market.chain.list_positions(bet_id)],
+        }
+
+    @app.post("/admin/bets/{bet_id}/mark_payouts_complete")
+    async def admin_mark_payouts(bet_id: str, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        if app.state.market is None or settings.chain_mode != "mock":
+            return _err(404, "NOT_FOUND", "mock market layer is unavailable")
+        market = await app.state.repo.get_market(bet_id)
+        if market is None or market["status"] not in ("settled", "refunded"):
+            return _err(409, "CONFLICT", "bet is not settled or refunded")
+        await app.state.repo.update_market(bet_id, payouts_completed_at=datetime.now(timezone.utc))
+        return {"ok": True}
+
+    @app.post("/admin/games")
+    async def admin_create_game(body: CreateGameIn, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        p = _sim_provider()
+        if isinstance(p, JSONResponse):
+            return p
+        game_id = await app.state.repo.create_sim_game(
+            body.home_name, body.away_name, datetime.now().astimezone() + timedelta(minutes=body.minutes)
+        )
+        return {"ok": True, "game_id": game_id}
 
     return app
 

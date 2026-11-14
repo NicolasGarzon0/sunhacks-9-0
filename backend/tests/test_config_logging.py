@@ -19,7 +19,8 @@ def test_missing_values_are_all_named():
 def test_defaults_and_repr_hides_secrets():
     s = load_settings(
         {"DATABASE_URL": "postgresql://u:pw@h/db", "GATEWAY_SHARED_SECRET": "gsecret", "ADMIN_SECRET": "asecret",
-         "ANTHROPIC_API_KEY": "sk-ant-secret"},
+         "ANTHROPIC_API_KEY": "sk-ant-secret", "LINK_SIGNING_SECRET": "x" * 32,
+         "DEPOSIT_PAGE_URL": "http://localhost:5173"},
         env_file=None,
     )
     assert s.port == 8788 and s.gateway_url == "http://localhost:8787"
@@ -28,7 +29,10 @@ def test_defaults_and_repr_hides_secrets():
     assert not hasattr(s, "max_stake_usd")
 
 
-BASE = {"DATABASE_URL": "x", "GATEWAY_SHARED_SECRET": "x", "ADMIN_SECRET": "x", "ANTHROPIC_API_KEY": "x"}
+BASE = {
+    "DATABASE_URL": "x", "GATEWAY_SHARED_SECRET": "x", "ADMIN_SECRET": "x", "ANTHROPIC_API_KEY": "x",
+    "LINK_SIGNING_SECRET": "x" * 32, "DEPOSIT_PAGE_URL": "http://localhost:5173",
+}
 
 
 def test_missing_anthropic_key_fails_fast():
@@ -56,7 +60,7 @@ def test_gateway_port_is_ignored():
 
 def test_env_file_parsing(tmp_path):
     f = tmp_path / ".env"
-    f.write_text('# c\nDATABASE_URL="postgresql://x"\nexport GATEWAY_SHARED_SECRET=g\nADMIN_SECRET=a\nANTHROPIC_API_KEY=k\nPORT=8787\n')
+    f.write_text('# c\nDATABASE_URL="postgresql://x"\nexport GATEWAY_SHARED_SECRET=g\nADMIN_SECRET=a\nANTHROPIC_API_KEY=k\nLINK_SIGNING_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nDEPOSIT_PAGE_URL=http://localhost:5173\nPORT=8787\n')
     s = load_settings({}, env_file=f)
     assert s.database_url == "postgresql://x" and s.port == 8788
 

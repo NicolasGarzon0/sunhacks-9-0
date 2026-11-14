@@ -71,6 +71,8 @@ def no_games(team: str, d: date | None) -> str:
 LOOKUP_APOLOGY = "Sorry, I cannot look up games right now. Please try again in a few minutes."
 CONFIRM_NO = "OK, which game did you mean? For example: ASU vs Texas Tech."
 GAME_STARTED = "That game has already started, so it cannot be bet on. Which game did you mean?"
+MARKET_NOT_OPEN = "That game is no longer available for betting. Which game did you mean?"
+MARKET_FAILED = "I could not open that market. Please try again."
 
 
 def confirmed(game: Game, tz: str) -> str:

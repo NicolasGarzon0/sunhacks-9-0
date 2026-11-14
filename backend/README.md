@@ -1,4 +1,4 @@
-# Handshake Bets backend (chunks 1-3: skeleton, bet extraction, game lookup)
+# Handshake Bets backend (chunks 1-4: skeleton, extraction, lookup, pool markets)
 
 FastAPI service that receives iMessage DMs from the gateway (`../src`, contract in `../docs/imessage-gateway.md`),
 dedups them in Postgres, looks the sender up in a demo roster, and replies through the gateway's `POST /send`.
@@ -33,15 +33,56 @@ The backend reads the repo-root `.env`, shared with the gateway (see the root `.
 | `LOCAL_TIMEZONE` | no | default `America/Phoenix`; used to resolve "tomorrow", "Saturday", etc. |
 | `GAME_PROVIDER` | no | `simulated` (default) or `realtime` |
 | `SPORTS_API_KEY` | only if realtime | realtimesportsapi.com key; never logged |
+| `MIN_STAKE_USD`, `MAX_STAKE_USD` | no | market deposit range; defaults 1 and 20 |
+| `MAX_PARTICIPANTS` | no | market participant cap; default 20 |
+| `FEE_BPS` | no | losing-side fee in basis points; default 500 |
+| `CHAIN_MODE` | no | `mock` is implemented; `real` fails clearly at startup |
+| `LINK_SIGNING_SECRET` | yes | at least 32 characters; never logged |
+| `DEPOSIT_PAGE_URL` | yes | public deposit page base URL |
+| `DEPOSIT_PAGE_ORIGIN` | no | CORS origin; defaults to the deposit URL origin |
+| `LINK_GRACE_HOURS` | no | post-payout link grace period; default 2 |
+| `FUNDING_MINUTES_BEFORE_KICKOFF` | no | funding close offset; default 60 |
+| `SETTLE_HOURS_AFTER_KICKOFF` | no | settlement eligibility offset; default 6 |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | not yet | reserved for later chunks; never logged |
 
 Startup fails with a message naming every missing required variable.
+
+## Pool markets
+
+After a game confirmation, chunk 4 opens a shared pool with a signed, multi use deposit link. The
+backend/markets package contains all market rules and makes no model calls. `MIN_STAKE_USD` and
+`MAX_STAKE_USD` are converted to integer cents at startup. Deposits are accepted only while the market
+is open, before `funding_closes_at`, and while the wallet position is within its limit. A wallet can
+choose only one side. `MAX_PARTICIPANTS` applies to new wallets, while top ups remain allowed.
+
+The state machine is `game_confirmed -> open -> locked -> settled` or `refunded`; failures become
+`failed`. Chunk 4 implements open, lock, refund, and mock chain persistence. Settlement and claims
+are chain primitives reserved for chunk 5. Fees use integer basis points: the fee is floor of the
+losing pool times `FEE_BPS / 10000`, and payout dust remains in the vault.
+
+Public market endpoints are mounted under `/markets`:
+
+- `GET /markets/{token}` returns game, limits, pool, fee, and timing data.
+- `GET /markets/{token}/participants` and `GET /markets/{token}/position?wallet=...` inspect participation.
+- `POST /markets/{token}/participants` accepts `{wallet, displayName}`.
+- `GET /markets/{token}/preview?side=0&amountBase=100` previews a payout.
+- `POST /markets/{token}/deposits` accepts `{wallet, side, amountBase}` in mock mode.
+
+Invalid tokens return 404, expired links return 410, and closed markets reject preview/deposit with
+409 `MARKET_NOT_OPEN`. Link tokens contain only the bet id and are signed with
+`LINK_SIGNING_SECRET`; link lifetime extends through the configured grace period after payouts, or
+seven days after settlement when payouts have not been marked complete.
+
+Admin market controls use `X-Admin-Secret`: `POST /admin/bets/{id}/close_funding`,
+`GET /admin/bets/{id}`, and mock-only `POST /admin/bets/{id}/mark_payouts_complete`. The future
+worker must call `close_funding` at `funding_closes_at` and retry pending notices.
 
 ## Database
 Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` in order in the
 Supabase SQL editor (or via the Supabase MCP): `0001_init` (inbound_messages, roster), `0002_drafts`
 (one bet request draft per sender handle) `0003_drafts_game_only` (status `collecting|ready`, pending
-field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`). All tables have RLS enabled with no policies, so the
+field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`) and `0005_markets`
+(market fields, participants, durable notices, and mock chain tables). All tables have RLS enabled with no policies, so the
 anon/authenticated API keys see nothing; the backend connects as the table owner.
 
 ## Run

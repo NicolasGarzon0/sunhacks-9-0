@@ -21,6 +21,7 @@ from .confirm import parse_confirmation
 from .gateway_client import GatewayClient
 from .logging import Logger
 from .repository import Draft, Repository, RosterEntry
+from markets.service import MarketError, MarketService
 from .validation import evaluate, parse_date
 
 MAX_CANDIDATES = 5
@@ -68,6 +69,7 @@ class BetFlow:
         logger: Logger,
         *,
         provider: GameProvider,
+        market: MarketService | None = None,
         tz: str,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -75,6 +77,7 @@ class BetFlow:
         self.gateway = gateway
         self.extractor = extractor
         self.provider = provider
+        self.market = market
         self.logger = logger
         self.tz = tz
         self.now = now or (lambda: datetime.now(timezone.utc))
@@ -89,8 +92,8 @@ class BetFlow:
         lock = self._locks.setdefault(proposer.handle, asyncio.Lock())
         async with lock:
             reply = await self._process(proposer, text, message_id)
-            result = await self.gateway.send_text(proposer.handle, reply, f"reply:{message_id}")
-        if not result.ok:
+            result = None if not reply else await self.gateway.send_text(proposer.handle, reply, f"reply:{message_id}")
+        if result is not None and not result.ok:
             self.logger.warn("bet.reply_failed", handle=proposer.handle, messageId=message_id, code=result.code)
 
     async def _active_draft(self, handle: str) -> Draft | None:
@@ -186,10 +189,32 @@ class BetFlow:
             await self._touch(draft)
             self.logger.info("bet.confirm_started", gameId=game.game_id, **log)
             return T.GAME_STARTED
-        bet, created = await self.repo.create_or_get_bet(proposer.handle, game.to_json())
+        if self.market is None:
+            bet, created = await self.repo.create_or_get_bet(proposer.handle, game.to_json())
+            await self.repo.delete_draft(proposer.handle)
+            self.logger.info("bet.confirmed", betId=bet.id, gameId=game.game_id, created=created, **log)
+            return T.confirmed(game, self.tz)
+        try:
+            status = await self.provider.get_status(game.game_id)
+            if status != "scheduled":
+                self._back_to_team(draft)
+                await self._touch(draft)
+                return T.MARKET_NOT_OPEN
+            await self.market.open_market(proposer.handle, game.to_json())
+        except MarketError as exc:
+            self.logger.info("market.not_open", gameId=game.game_id, code=exc.code, **log)
+            self._back_to_team(draft)
+            await self._touch(draft)
+            if exc.code == "OPEN_FAILED":
+                return ""
+            return T.MARKET_NOT_OPEN if exc.code == "GAME_NOT_OPEN" else T.MARKET_FAILED
+        except Exception as exc:
+            self.logger.error("market.open_failed", gameId=game.game_id, detail=type(exc).__name__, **log)
+            self._back_to_team(draft)
+            await self._touch(draft)
+            return T.MARKET_FAILED
         await self.repo.delete_draft(proposer.handle)
-        self.logger.info("bet.confirmed", betId=bet.id, gameId=game.game_id, created=created, **log)
-        return T.confirmed(game, self.tz)
+        return ""
 
     @staticmethod
     def _back_to_team(draft: Draft) -> None:
@@ -213,7 +238,8 @@ class BetFlow:
             self.logger.warn("bet.lookup_failed", provider=self.provider.name, detail=type(e).__name__, **log)
             return T.LOOKUP_APOLOGY
         now = self.now()
-        games = [g for g in found if g.status == "scheduled" and g.kickoff_utc > now]
+        cutoff = now + timedelta(minutes=self.market.settings.funding_minutes_before_kickoff) if self.market else now
+        games = [g for g in found if g.status == "scheduled" and g.kickoff_utc > cutoff]
         games.sort(key=lambda g: g.kickoff_utc)
         games = games[:MAX_CANDIDATES]
         self.logger.info("bet.lookup", provider=self.provider.name, found=len(found), offered=len(games), **log)
