@@ -170,6 +170,7 @@ a:hover { text-decoration-color: var(--text); }
 .btn.secondary { width: 100%; }
 .btn:disabled { cursor: not-allowed; opacity: 0.7; }
 .btn.primary:disabled { opacity: 1; }
+.card > .muted + .btn { margin-top: 16px; }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.7s linear infinite; }
 
 .notice { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); font-size: 14px; color: var(--text); }
