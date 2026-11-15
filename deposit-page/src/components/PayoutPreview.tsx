@@ -20,10 +20,26 @@ export function PayoutPreview({ team, preview, loading, errorCode, feeBps, hasIn
   else if (preview) {
     body = `If ${team} wins you receive about $${preview.payout_usd}${preview.multiplier ? ` (${preview.multiplier}x)` : ""} after the ${feePercent(preview.fee_bps)}% fee on the losing side.`;
   } else body = `If ${team} wins you receive about … after the ${feePercent(feeBps)}% fee on the losing side.`;
+  const showGrid = !errorCode && team !== null && hasInput;
   return (
-    <p className={`preview${loading ? " loading" : ""}`} data-testid="preview">
-      {body}
+    <div className={`preview${loading ? " loading" : ""}`} data-testid="preview">
+      {showGrid ? (
+        <>
+          <span className="sr-only">{body}</span>
+          <div className="preview-grid" aria-hidden="true">
+            <div className="preview-cell">
+              <span className="preview-label">Odds</span>
+              <span className="preview-odds">{preview?.multiplier ? `${preview.multiplier}x` : "…"}</span>
+            </div>
+            <div className="preview-cell preview-cell-win">
+              <span className="preview-label">You could win</span>
+              <span className="preview-win">{preview ? `$${preview.payout_usd}` : "…"}</span>
+              <span className="preview-profit">{preview ? `+$${preview.profit_usd} profit` : " "}</span>
+            </div>
+          </div>
+        </>
+      ) : <span className="preview-text">{body}</span>}
       <span className="preview-note">The payout moves as others join.</span>
-    </p>
+    </div>
   );
 }

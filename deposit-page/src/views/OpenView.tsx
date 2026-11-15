@@ -131,11 +131,13 @@ export function OpenView({ token, market, participants, position, wallet, now, a
               value={name} disabled={busy} onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <WalletPanel
-            wallet={wallet} info={walletInfo} loading={info.loading} unavailable={info.unavailable} infoError={info.error}
-            needsUsdc={needsUsdc} airdropping={info.airdropping} airdropError={info.airdropError} onAirdrop={() => void info.airdrop()}
-            hasPosition={held !== null}
-          />
+          {wallet.provider.requiresLogin && !wallet.address && !parsed.ok ? null : (
+            <WalletPanel
+              wallet={wallet} info={walletInfo} loading={info.loading} unavailable={info.unavailable} infoError={info.error}
+              needsUsdc={needsUsdc} airdropping={info.airdropping} airdropError={info.airdropError} onAirdrop={() => void info.airdrop()}
+              hasPosition={held !== null}
+            />
+          )}
           {blocked ? <p className="notice" role="status">{blocked}</p> : null}
           {busy || dep.state.step === "confirmed" ? <DepositProgress step={dep.state.step} retried={dep.state.retried} /> : null}
           {dep.state.step === "error" && errCode ? (

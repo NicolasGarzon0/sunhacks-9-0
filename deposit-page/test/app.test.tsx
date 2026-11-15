@@ -382,6 +382,8 @@ describe("untrusted text and wallet", () => {
   it("shows a Log in button and a disabled deposit for a login wallet that is not signed in", async () => {
     renderBet(new PrivyWalletProvider());
     await screen.findByRole("radiogroup");
+    expect(screen.queryByRole("button", { name: "Log in" })).toBeNull(); // the sign in box waits for an amount
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in to deposit" })).toBeDisabled();
   });
@@ -412,6 +414,7 @@ describe("login wallet (Privy) in the page", () => {
     renderBet(provider);
     await screen.findByRole("radiogroup");
     expect(screen.queryByText(/Test wallet on devnet/)).toBeNull();
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     await userEvent.click(screen.getByRole("button", { name: "Log in" }));
     await waitFor(() => expect(screen.getByText("Signed in")).toBeInTheDocument());
     const shown = screen.getByTitle(address);
@@ -429,12 +432,12 @@ describe("login wallet (Privy) in the page", () => {
     api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
     api.depositSubmit.mockImplementation(async () => ({ ok: true, signature: "SIG9", explorer: "x", already: false, market: market() }));
     renderBet(provider);
+    await userEvent.type(await screen.findByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
     await userEvent.click(await screen.findByRole("button", { name: "Get test USDC" }));
     expect(await screen.findByText("$25.00")).toBeInTheDocument();
     expect(api.airdrop).toHaveBeenCalledWith("tok", address);
-    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
-    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ })); // the amount "5" was typed above
     await userEvent.click(await screen.findByRole("button", { name: /Deposit \$5 on Arizona Cardinals/ }));
     expect(await screen.findByTestId("success")).toBeInTheDocument();
     expect(api.depositTx).toHaveBeenCalledWith("tok", address, 1, "5");
@@ -449,12 +452,12 @@ describe("login wallet (Privy) in the page", () => {
     void real;
     api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
     renderBet(provider);
+    await userEvent.type(await screen.findByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
     await waitFor(() => expect(screen.getByText("$25.00")).toBeInTheDocument());
     // make the next sign attempt fail like a rejected prompt
     const spy = vi.spyOn(provider, "signDeposit").mockRejectedValue(new (await import("../src/wallet")).WalletError("WALLET_REJECTED"));
-    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
-    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ })); // the amount "5" was typed above
     await userEvent.click(await screen.findByRole("button", { name: /Deposit \$5 on Arizona Cardinals/ }));
     expect(await screen.findByText("The signature was not approved, so nothing was sent. Please try again.")).toBeInTheDocument();
     expect(api.depositSubmit).not.toHaveBeenCalled();

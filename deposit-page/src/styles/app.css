@@ -135,9 +135,18 @@ a:hover { text-decoration-color: var(--text); }
 .pill:disabled { opacity: 0.5; cursor: not-allowed; }
 .field-error { color: var(--bad); font-size: 14px; margin: 0; min-height: 21px; }
 .field-error[role="alert"]::before { content: "! "; font-weight: 700; }
-.preview { margin: 14px 0 0; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; font-size: 15px; min-height: 92px; transition: opacity 0.2s; }
+.preview { margin: 14px 0 0; padding: 14px; background: var(--bg); border: 1px solid var(--border); box-shadow: var(--hairline); border-radius: 14px; font-size: 15px; min-height: 112px; transition: opacity 0.2s; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; }
 .preview.loading { opacity: 0.6; }
-.preview-note { display: block; color: var(--muted); font-size: 13px; margin-top: 6px; }
+.preview-text { color: var(--muted); }
+.preview-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.preview-cell { display: grid; gap: 2px; align-content: start; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
+.preview-cell-win { background: var(--good-bg); border-color: var(--good-border); }
+.preview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.preview-odds, .preview-win, .preview-profit { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.preview-odds, .preview-win { font-size: 26px; font-weight: 600; letter-spacing: -0.04em; line-height: 1.15; overflow-wrap: anywhere; }
+.preview-win, .preview-profit { color: var(--good); }
+.preview-profit { font-size: 12px; min-height: 16px; }
+.preview-note { display: block; color: var(--muted); font-size: 13px; }
 
 /* ---------- wallet ---------- */
 .wallet { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); }
