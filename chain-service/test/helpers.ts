@@ -16,7 +16,9 @@ export function testConfig(over: Partial<ChainConfig> = {}): ChainConfig {
   return {
     rpcUrl: "http://fake", programId: Keypair.generate().publicKey, mint: Keypair.generate().publicKey,
     payer: Keypair.generate(), oracle: Keypair.generate(), treasury: Keypair.generate().publicKey,
-    secret: "test-secret-0123456789", port: 0, logLevel: "debug", ...over,
+    secret: "test-secret-0123456789", port: 0, logLevel: "debug",
+    mintAuthority: Keypair.generate(), airdropMaxPerCallBase: 100_000_000n, depositCutoffSeconds: 30, depositBuildTtlSeconds: 60,
+    depositRatePerWalletPerMin: 10, depositRatePerBetPerMin: 60, ...over,
   };
 }
 
@@ -27,6 +29,11 @@ export class FakeRpc implements Rpc {
   sendError: (Error & { logs?: string[] }) | null = null;
   onSend: ((tx: VersionedTransaction) => unknown) | null = null;
   confirmResult: TxOutcome = { err: null, logs: [] };
+  clock = 1_899_999_000; // chain clock (unix seconds); the helper bet closes funding at 1_900_000_000
+  blockhash = "EETubP5AKHgjPAhzPAFcb8Gqe4Cxg1eKYjZHjQ2o3ga6";
+  validBlockhashes = new Set<string>([this.blockhash]);
+  simulation: { err: unknown | null; logs: string[] } = { err: null, logs: [] };
+  simulated: Uint8Array[] = [];
   balances = new Map<string, number>();
   constructor(public programId: PublicKey) {}
   async getGenesisHash() { return "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"; }
@@ -43,7 +50,11 @@ export class FakeRpc implements Rpc {
   }
   async getTokenBalance(pk: PublicKey) { return this.tokens.get(pk.toBase58()) ?? 0n; }
   async getBalance(pk: PublicKey) { return this.balances.get(pk.toBase58()) ?? 1_000_000_000; }
-  async getLatestBlockhash() { return "11111111111111111111111111111111"; }
+  async getLatestBlockhash() { return this.blockhash; }
+  async getLatestBlockhashInfo() { return { blockhash: this.blockhash, lastValidBlockHeight: 1_000_000 }; }
+  async isBlockhashValid(b: string) { return this.validBlockhashes.has(b); }
+  async getClockUnix() { return this.clock; }
+  async simulate(bytes: Uint8Array) { this.simulated.push(bytes); return this.simulation; }
   async sendRaw(bytes: Uint8Array) {
     const tx = VersionedTransaction.deserialize(bytes);
     await this.onSend?.(tx); // lets a test change the chain "during" the send (a race, or the effect of the tx)

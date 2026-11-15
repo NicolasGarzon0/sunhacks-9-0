@@ -11,6 +11,13 @@ export interface ChainConfig {
   secret: string;
   port: number;
   logLevel: LogLevel;
+  /** test USDC minter; without it the airdrop endpoint answers AIRDROP_DISABLED */
+  mintAuthority: Keypair | null;
+  airdropMaxPerCallBase: bigint;
+  depositCutoffSeconds: number;
+  depositBuildTtlSeconds: number;
+  depositRatePerWalletPerMin: number;
+  depositRatePerBetPerMin: number;
 }
 
 export class ConfigError extends Error {}
@@ -42,6 +49,14 @@ function keypair(env: NodeJS.ProcessEnv, name: string): Keypair {
   }
 }
 
+function intEnv(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min) throw new ConfigError(`${name} must be an integer of at least ${min}`);
+  return n;
+}
+
 /** Reads and validates env. Names the offending variable, never prints a value. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ChainConfig {
   const secret = required(env, "CHAIN_SERVICE_SECRET");
@@ -59,5 +74,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ChainConfig {
     secret,
     port,
     logLevel: parseLogLevel(env.LOG_LEVEL),
+    mintAuthority: env.MINT_AUTHORITY_SECRET_KEY?.trim() ? keypair(env, "MINT_AUTHORITY_SECRET_KEY") : null,
+    airdropMaxPerCallBase: BigInt(intEnv(env, "AIRDROP_MAX_PER_CALL_BASE", 100_000_000, 1)),
+    depositCutoffSeconds: intEnv(env, "DEPOSIT_CUTOFF_SECONDS", 30, 0),
+    depositBuildTtlSeconds: intEnv(env, "DEPOSIT_BUILD_TTL_SECONDS", 60, 1),
+    depositRatePerWalletPerMin: intEnv(env, "DEPOSIT_RATE_PER_WALLET_PER_MIN", 10, 1),
+    depositRatePerBetPerMin: intEnv(env, "DEPOSIT_RATE_PER_BET_PER_MIN", 60, 1),
   };
 }

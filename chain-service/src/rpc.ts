@@ -1,5 +1,5 @@
 // The only module that talks to the network. Everything else uses the Rpc interface so tests can inject a fake.
-import { Connection, PublicKey, type GetProgramAccountsFilter } from "@solana/web3.js";
+import { Connection, PublicKey, SYSVAR_CLOCK_PUBKEY, VersionedTransaction, type GetProgramAccountsFilter } from "@solana/web3.js";
 import { ChainError } from "./errors.ts";
 import type { Logger } from "./logger.ts";
 
@@ -15,6 +15,12 @@ export interface Rpc {
   getTokenBalance(pk: PublicKey): Promise<bigint>;
   getBalance(pk: PublicKey): Promise<number>;
   getLatestBlockhash(): Promise<string>;
+  getLatestBlockhashInfo(): Promise<{ blockhash: string; lastValidBlockHeight: number }>;
+  isBlockhashValid(blockhash: string): Promise<boolean>;
+  /** unix seconds from the chain's Clock sysvar (the clock the program uses) */
+  getClockUnix(): Promise<number>;
+  /** simulate a serialized transaction without checking signatures */
+  simulate(bytes: Uint8Array): Promise<{ err: unknown | null; logs: string[] }>;
   /** throws an error carrying `.logs` when the program rejects (preflight simulation) */
   sendRaw(bytes: Uint8Array): Promise<string>;
   confirm(signature: string): Promise<TxOutcome>;
@@ -65,6 +71,22 @@ export class ConnectionRpc implements Rpc {
   }
   getBalance(pk: PublicKey) { return this.r("balance", () => this.conn.getBalance(pk, "confirmed")); }
   async getLatestBlockhash() { return (await this.r("blockhash", () => this.conn.getLatestBlockhash("confirmed"))).blockhash; }
+  async getLatestBlockhashInfo() {
+    const r = await this.r("blockhash", () => this.conn.getLatestBlockhash("confirmed"));
+    return { blockhash: r.blockhash, lastValidBlockHeight: r.lastValidBlockHeight };
+  }
+  async isBlockhashValid(blockhash: string): Promise<boolean> {
+    return (await this.r("isBlockhashValid", () => this.conn.isBlockhashValid(blockhash, { commitment: "confirmed" }))).value;
+  }
+  async getClockUnix(): Promise<number> {
+    const a = await this.r("clock", () => this.conn.getAccountInfo(SYSVAR_CLOCK_PUBKEY, "confirmed"));
+    if (!a) throw new ChainError("RPC_ERROR", "clock sysvar missing");
+    return Number(Buffer.from(a.data).readBigInt64LE(32));
+  }
+  async simulate(bytes: Uint8Array) {
+    const r = await this.r("simulate", () => this.conn.simulateTransaction(VersionedTransaction.deserialize(bytes), { sigVerify: false, commitment: "confirmed" }));
+    return { err: r.value.err, logs: r.value.logs ?? [] };
+  }
   async sendRaw(bytes: Uint8Array): Promise<string> {
     return this.r("send", () => this.conn.sendRawTransaction(bytes, { preflightCommitment: "confirmed" }));
   }

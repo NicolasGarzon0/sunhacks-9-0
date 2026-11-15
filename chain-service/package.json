@@ -10,7 +10,8 @@
     "test": "tsx --test test/*.test.ts",
     "test:devnet": "RUN_DEVNET_TESTS=1 tsx --test test/devnet.test.ts",
     "sync-idl": "cp ../contracts/target/idl/handshake_pool.json idl/handshake_pool.json",
-    "dev-deposit": "tsx scripts/dev_deposit.ts"
+    "dev-deposit": "tsx scripts/dev_deposit.ts",
+    "deposit-client": "tsx scripts/deposit_client.ts"
   },
   "engines": {
     "node": ">=22"

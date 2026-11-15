@@ -79,6 +79,14 @@ class Settings:
     contract_refund_buffer_hours: int = 12
     payer_min_sol_alert: float = 0.3
     chain_health_every_ticks: int = 4
+    # sponsored deposits and the airdrop (chunk 3B). Rate limits are per process (in memory).
+    airdrop_enabled: bool = False
+    airdrop_max_per_wallet_base: int = 25_000_000
+    airdrop_daily_cap_base: int = 500_000_000
+    airdrop_per_ip_per_hour: int = 5
+    public_rate_per_ip_per_min: int = 30
+    public_rate_per_wallet_per_min: int = 10
+    trust_proxy_headers: bool = False  # take the client IP from X-Forwarded-For (only behind a proxy you control)
 
     @property
     def link_grace(self) -> timedelta:
@@ -291,5 +299,12 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         contract_refund_buffer_hours=integer("CONTRACT_REFUND_BUFFER_HOURS", 12, 1),
         payer_min_sol_alert=_float(get("PAYER_MIN_SOL_ALERT"), 0.3, "PAYER_MIN_SOL_ALERT"),
         chain_health_every_ticks=integer("CHAIN_HEALTH_EVERY_TICKS", 4, 1),
+        airdrop_enabled=boolean("AIRDROP_ENABLED", False),
+        airdrop_max_per_wallet_base=money("AIRDROP_MAX_PER_WALLET_USD", "25"),
+        airdrop_daily_cap_base=money("AIRDROP_DAILY_CAP_USD", "500"),
+        airdrop_per_ip_per_hour=integer("AIRDROP_PER_IP_PER_HOUR", 5, 1),
+        public_rate_per_ip_per_min=integer("PUBLIC_RATE_PER_IP_PER_MIN", 30, 1),
+        public_rate_per_wallet_per_min=integer("PUBLIC_RATE_PER_WALLET_PER_MIN", 10, 1),
+        trust_proxy_headers=boolean("TRUST_PROXY_HEADERS", False),
         notice_max_attempts=integer("NOTICE_MAX_ATTEMPTS", 6, 1),
     )

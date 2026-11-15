@@ -22,6 +22,7 @@ from games.factory import build_provider
 from games.provider import GameProvider
 from games.simulated import SimulatedProvider
 from markets.chain import build_chain_client
+from markets.deposits import DepositFlow
 from markets.links import LinkSigner
 from markets.service import MarketService
 from markets.worker import Worker
@@ -86,6 +87,7 @@ def create_app(
     extractor: Extractor | None = None,
     provider: GameProvider | None = None,
     now: Callable[[], datetime] | None = None,
+    chain_client: Any = None,
 ) -> FastAPI:
     """Pass repo/gateway/extractor in tests; otherwise they are built from settings in the lifespan."""
     settings = settings or load_settings()
@@ -155,11 +157,12 @@ def create_app(
     app.state.flow = None
     app.state.market = None
     app.state.worker = None
+    app.state.deposits = None
 
     def get_market() -> MarketService:
         if app.state.market is None:
             app.state.market = MarketService(
-                app.state.repo, build_chain_client(settings, app.state.repo.pool, now=now),
+                app.state.repo, chain_client or build_chain_client(settings, app.state.repo.pool, now=now),
                 LinkSigner(settings.link_signing_secret, settings.deposit_page_url, settings.link_grace),
                 app.state.gateway, logger, settings, provider=app.state.provider, now=now,
             )
@@ -298,7 +301,12 @@ def create_app(
         logger.info("admin.game_status", gameId=game_id, status=body.status)
         return {"ok": True, "game_id": game_id, "status": await p.get_status(game_id)}
 
-    app.mount("/markets", build_market_app(get_market, logger, settings.deposit_page_origin))
+    def get_deposits() -> DepositFlow:
+        if app.state.deposits is None:
+            app.state.deposits = DepositFlow(get_market(), settings, logger, now=now)
+        return app.state.deposits
+
+    app.mount("/markets", build_market_app(get_market, logger, settings.deposit_page_origin, get_deposits, settings))
 
     @app.post("/admin/games")
     async def admin_games_create(body: NewGameIn, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:

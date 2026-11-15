@@ -37,6 +37,11 @@ RUN_DEVNET_TESTS=1 npm run test:devnet     # also lock, settle, claim, close_los
 | `CHAIN_SERVICE_SECRET` | at least 16 characters; every request except `GET /health` needs it in `X-Chain-Secret` |
 | `PORT` | default 8789 |
 | `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error` |
+| `MINT_AUTHORITY_SECRET_KEY` | optional, base64. The test USDC minter. Without it `POST /airdrop` answers `AIRDROP_DISABLED` |
+| `AIRDROP_MAX_PER_CALL_BASE` | hard cap per airdrop call, default 100000000 (100 USDC). The per wallet and daily policy lives in the backend |
+| `DEPOSIT_CUTOFF_SECONDS` | default 30: a deposit must be built at least this long before `funding_closes_at` (chain clock) |
+| `DEPOSIT_BUILD_TTL_SECONDS` | default 60: `expires_at` of a built transaction (the blockhash itself lasts about as long) |
+| `DEPOSIT_RATE_PER_WALLET_PER_MIN` / `DEPOSIT_RATE_PER_BET_PER_MIN` | defaults 10 and 60. In memory, per process |
 
 Startup fails naming the variable (never its value). `contracts/.keys/env.generated` holds ready to copy values.
 
@@ -53,7 +58,28 @@ All JSON. Success is `{ok:true, ...}`, failure is `{ok:false, code, detail}` wit
 | `POST /bets/{id}/claim {wallet}` | payer is signer and fee payer, rent goes to `bet.payer`. Returns `payout_base`, `kind` (`winnings` or `refund`), `signature` |
 | `POST /bets/{id}/close_loser_position {wallet}` | closes a losing position (rent back to the payer, no tokens move) |
 
-Deposits are not an endpoint: the user signs on the deposit page and the payer co-signs (chunk 3B). `chain-service/scripts/dev_deposit.ts` does the same for tests.
+| `GET /wallet/{pubkey}` | `has_token_account, usdc_base, sol_lamports` |
+| `POST /airdrop {wallet, amount_base}` | creates the wallet's USDC token account if missing (payer pays), then mints. At most `AIRDROP_MAX_PER_CALL_BASE` per call, never closes an account. Who may ask and how often is the backend's policy |
+| `POST /deposit/build {bet_id, wallet, side, amount_base}` | checks the live deposit rules, then returns ONE unsigned legacy transaction (`transaction_b64`, `message_b64`, `blockhash`, `last_valid_block_height`, `expires_at`). Signs nothing |
+| `POST /deposit/submit {bet_id, wallet, side, amount_base, signed_tx_b64 \| message_b64 + user_signature_b64}` | verifies, then co-signs as the sponsor and sends. Returns `signature`, `explorer`, `already` |
+
+`chain-service/scripts/dev_deposit.ts` still makes deposits directly for tests, and `scripts/deposit_client.ts` plays the deposit page.
+
+## Sponsored deposits: what is verified before the payer signs
+A signature authorizes bytes, so the payer key signs **only the exact bytes that were verified**, and the message is never modified after any signature exists. `POST /deposit/submit` requires, in order (each failure is `TX_REJECTED` with a safe reason, and nothing is signed or sent):
+1. a **legacy** transaction (versioned messages and address lookup tables are rejected);
+2. exactly **two required signers**: the payer (fee payer) and the wallet, nobody else; the client may not supply the payer's signature;
+3. **exactly one instruction**, for `PROGRAM_ID`, whose discriminator is `deposit` (so no compute budget, token program, associated token program, close or create instruction can ride along);
+4. the submitted message bytes are **byte for byte equal to the message the service rebuilds** from `bet_id`, `wallet`, `side`, `amount_base` and the submitted blockhash (this catches any tampered amount, side or account);
+5. the wallet's **ed25519 signature verifies** over those bytes;
+6. (an identical submit that already succeeded returns the same signature, see below);
+7. the **blockhash is still valid** (`TX_EXPIRED` otherwise);
+8. the **live rules** again: bet state Open, now at least `DEPOSIT_CUTOFF_SECONDS` before `funding_closes_at` (chain clock), side, min, max, the wallet's existing side, the participant cap for new wallets, the token account exists and holds the USDC (`MARKET_NOT_OPEN`, `FUNDING_CLOSED`, `BELOW_MIN`, `ABOVE_MAX`, `MARKET_FULL`, `ALREADY_OTHER_SIDE`, `NO_TOKEN_ACCOUNT`, `INSUFFICIENT_USDC`, `UNTRUSTED_BET`);
+9. a **simulation** with the sponsor's slot empty; program errors are mapped to the same friendly codes, anything else is `TX_REJECTED`.
+
+Only then the payer signs the verified message with ed25519 and the service sends and confirms it (`SUBMIT_FAILED` when sending fails, `TX_EXPIRED` when the blockhash expired meanwhile). Logs carry bet id, the first 6 characters of the wallet, instruction and signature only.
+
+**Idempotency and rate limits** are in memory and therefore per process: the same signed transaction (same message and wallet signature) submitted twice sends once and returns the same signature (`already:true`), concurrent duplicates included; after a restart a resubmit goes through verification again and fails with a normal code if the deposit already happened. Build and submit are limited per wallet and per bet per minute (`RATE_LIMITED`, HTTP 429).
 
 ## Error codes
 `BELOW_MIN, ABOVE_MAX, MARKET_FULL, ALREADY_OTHER_SIDE, MARKET_NOT_OPEN, WRONG_STATE, NOT_A_WINNER, NOT_FOUND, FUNDING_CLOSED, PAST_REFUND_DEADLINE, REFUND_TOO_EARLY, BOTH_SIDES_REQUIRED, UNTRUSTED_BET, INVALID_PARAMS, RPC_ERROR`, plus `UNAUTHORIZED` (bad secret) and `BAD_REQUEST` (malformed request; the backend maps it to INVALID_PARAMS).
@@ -76,5 +102,5 @@ Secrets exist only in the process environment. They are never logged, echoed in 
 On chain a position account is deleted when it is claimed or closed, and the Bet account is deleted by `close_bet`.
 The backend therefore copies the positions into `position_snapshots` when funding closes and serves every locked, settled and refunded market view from there (see `backend/README.md`).
 
-## What 3B adds
-The deposit page (user signed deposit transactions with the sponsor co-signature) and the test USDC airdrop endpoint, both built on the code here (`src/program.ts`, `scripts/dev_deposit.ts`, `contracts/scripts/lib/airdrop.ts`).
+## Reference client
+`npm run deposit-client -- <airdrop|wallet|view|deposit> --link <market link> --wallet-file <name>` plays the deposit page with a local keypair (zero SOL, stored under the gitignored `.dev-wallets/`): airdrop, wallet check, `deposit_tx`, local signing, `deposit_submit` in either shape (`--shape message|signed`), and `--tamper amount|side` to prove the service refuses altered bytes. The real wallet login (Privy) is chunk 5.

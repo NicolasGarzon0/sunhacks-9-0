@@ -641,6 +641,50 @@ class Repository:
             )
             return {w: n for w, n in await cur.fetchall()}
 
+    # --- test USDC airdrop policy (migration 0008) ---
+
+    async def reserve_airdrop(self, wallet: str, bet_id: str, ip: str, per_wallet_cap: int, daily_cap: int, want: int,
+                              now: datetime) -> tuple[str, int, int]:
+        """Atomically decide how much this wallet may still get. Returns (outcome, amount, already_received):
+        outcome is 'reserved' (a row was inserted for `amount`), 'full' (the wallet already has its whole allowance)
+        or 'daily_cap' (the global daily cap would be exceeded). Serialized by an advisory lock so two requests
+        cannot both pass the caps."""
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                await conn.execute("select pg_advisory_xact_lock(%s)", (0x4842_4149_5244,))  # "HBAIRD"
+                got = int((await (await conn.execute(
+                    "select coalesce(sum(amount_base), 0) from airdrops where wallet = %s", (wallet,))).fetchone())[0])
+                remaining = per_wallet_cap - got
+                if remaining <= 0:
+                    return "full", 0, got
+                today = int((await (await conn.execute(
+                    "select coalesce(sum(amount_base), 0) from airdrops where created_at >= %s", (day_start,))).fetchone())[0])
+                amount = min(want, remaining)
+                if today + amount > daily_cap:
+                    return "daily_cap", 0, got
+                await conn.execute(
+                    "insert into airdrops (wallet, amount_base, bet_id, ip, created_at) values (%s, %s, %s, %s, %s)",
+                    (wallet, amount, bet_id, ip[:64], now),
+                )
+                return "reserved", amount, got
+
+    async def finish_airdrop(self, wallet: str, bet_id: str, tx_ref: str | None, ok: bool, amount: int, now: datetime) -> None:
+        """Record the transaction on the reserved row, or release the reservation when the mint failed."""
+        async with self.pool.connection() as conn:
+            if ok:
+                await conn.execute(
+                    "update airdrops set tx_ref = %s where id = (select id from airdrops where wallet = %s and bet_id = %s "
+                    "and tx_ref is null and amount_base = %s order by created_at desc limit 1)",
+                    (tx_ref, wallet, bet_id, amount),
+                )
+            else:
+                await conn.execute(
+                    "delete from airdrops where id = (select id from airdrops where wallet = %s and bet_id = %s "
+                    "and tx_ref is null and amount_base = %s order by created_at desc limit 1)",
+                    (wallet, bet_id, amount),
+                )
+
     # --- proposer notices (durable "send once") ---
 
     async def ensure_notice(self, bet_id: str, kind: str, key: str) -> tuple[str, int]:

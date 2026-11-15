@@ -3,6 +3,8 @@ export const CODES = [
   "BELOW_MIN", "ABOVE_MAX", "MARKET_FULL", "ALREADY_OTHER_SIDE", "MARKET_NOT_OPEN", "WRONG_STATE", "NOT_A_WINNER", "NOT_FOUND",
   "FUNDING_CLOSED", "PAST_REFUND_DEADLINE", "REFUND_TOO_EARLY", "BOTH_SIDES_REQUIRED", "UNTRUSTED_BET", "INVALID_PARAMS", "RPC_ERROR",
   "UNAUTHORIZED", "BAD_REQUEST",
+  // sponsored deposits and the airdrop (chunk 3B)
+  "NO_TOKEN_ACCOUNT", "INSUFFICIENT_USDC", "TX_EXPIRED", "TX_REJECTED", "SUBMIT_FAILED", "RATE_LIMITED", "AIRDROP_DISABLED",
 ] as const;
 export type Code = (typeof CODES)[number];
 
@@ -81,7 +83,10 @@ export function httpStatus(code: Code): number {
   switch (code) {
     case "UNAUTHORIZED": return 401;
     case "BAD_REQUEST":
+    case "TX_REJECTED":
     case "INVALID_PARAMS": return 400;
+    case "RATE_LIMITED": return 429;
+    case "SUBMIT_FAILED": return 502;
     case "NOT_FOUND": return 404;
     case "RPC_ERROR": return 502;
     default: return 409;

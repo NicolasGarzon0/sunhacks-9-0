@@ -61,6 +61,7 @@ class Live:
         self.signer = LinkSigner(settings.link_signing_secret, settings.deposit_page_url, settings.link_grace)
         self.mint = env["TEST_USDC_MINT"]
         self.deposit_sigs: dict[str, list[str]] = {}
+        self.minutes = 6  # kickoff of the simulated game, minutes from now
         self.dm_lock = asyncio.Lock()  # one bet draft per sender: the DM conversations must not overlap
 
     async def wait(self, what: str, fn, timeout: float = 300, every: float = 4):
@@ -106,7 +107,7 @@ class Live:
 
     async def open_market(self, label: str, handle: str, away: str, home: str, away_name: str, home_name: str):
         r = await self.http.post(f"{BACKEND}/admin/games", headers=self.admin,
-                                 json={"home_id": home, "away_id": away, "minutes_from_now": 6})
+                                 json={"home_id": home, "away_id": away, "minutes_from_now": self.minutes})
         game = r.json()["game"]
         gid = game["game_id"]
 

@@ -51,3 +51,47 @@ test("devnet: create, deposit x2, lock, settle, claim, close_loser_position, clo
   assert.equal(((await chain.closeBet(id)) as any).already, false);
   assert.equal(((await chain.closeBet(id)) as any).already, true);
 });
+
+test("devnet: airdrop, build, user signs, submit: the contract accepts a sponsored deposit from a wallet with zero SOL", { skip: !run, timeout: 240_000 }, async () => {
+  const { DepositService } = await import("../src/deposit.ts");
+  const { WalletService } = await import("../src/wallet.ts");
+  const { signEd25519 } = await import("../src/crypto.ts");
+  const { Keypair } = await import("@solana/web3.js");
+  const cfg = loadConfig();
+  const rpc = ConnectionRpc.create(cfg.rpcUrl);
+  await guardDevnet(rpc);
+  const logger = createLogger({ level: "warn" });
+  const chain = new ChainService({ rpc, cfg, logger });
+  const wallets = new WalletService({ rpc, cfg, chain, logger });
+  const deposits = new DepositService({ rpc, cfg, chain, logger });
+  const id = randomUUID();
+  const now = Math.floor(Date.now() / 1000);
+  await chain.createBet({ bet_id: id, funding_closes_at: now + 600, refund_after: now + 1200, fee_bps: 500, min_stake_base: 1_000_000, max_stake_base: 20_000_000, max_participants: 20 });
+
+  const user = Keypair.generate(); // zero SOL
+  const w: any = await wallets.wallet(user.publicKey.toBase58());
+  assert.equal(w.has_token_account, false);
+  await assert.rejects(deposits.build({ bet_id: id, wallet: user.publicKey.toBase58(), side: 1, amount_base: 5_000_000 }), (e: any) => e.code === "NO_TOKEN_ACCOUNT");
+  await wallets.airdrop(user.publicKey.toBase58(), 10_000_000);
+  assert.equal(((await wallets.wallet(user.publicKey.toBase58())) as any).usdc_base, 10_000_000);
+
+  const args = { bet_id: id, wallet: user.publicKey.toBase58(), side: 1, amount_base: 5_000_000 };
+  const built: any = await deposits.build(args);
+  const message = Buffer.from(built.message_b64, "base64");
+  const sig = signEd25519(user.secretKey, message);
+  const r: any = await deposits.submit({ ...args, message_b64: built.message_b64, user_signature_b64: sig.toString("base64") });
+  assert.equal(r.already, false);
+  const again: any = await deposits.submit({ ...args, message_b64: built.message_b64, user_signature_b64: sig.toString("base64") });
+  assert.equal(again.signature, r.signature);
+  const bet: any = await chain.getBet(id);
+  assert.deepEqual(bet.side_totals, [0, 5_000_000]);
+  assert.equal(await rpc.getBalance(user.publicKey), 0, "the wallet never held SOL");
+
+  // a tampered amount is refused before anything is signed
+  await assert.rejects(deposits.submit({ ...args, amount_base: 6_000_000, message_b64: built.message_b64, user_signature_b64: sig.toString("base64") }), (e: any) => e.code === "TX_REJECTED");
+
+  // clean up: refund, claim, close
+  await chain.refundAll(id);
+  await chain.claim(id, user.publicKey.toBase58());
+  await chain.closeBet(id);
+});

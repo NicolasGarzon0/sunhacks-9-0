@@ -6,9 +6,11 @@ service has no deposit endpoint: users deposit from the deposit page or the dev 
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -32,6 +34,14 @@ class FakeChainService:
         self.payer_sol = 2.0
         self.oracle_sol = 0.5
         self.broken: dict[str, int] = {}  # "METHOD path-suffix" -> remaining failures with HTTP 503
+        # sponsored deposits (chunk 3B)
+        self.wallets: dict[str, dict] = {}  # wallet -> {"ata": bool, "usdc": base units}
+        self.mints: list[tuple[str, int]] = []
+        self.airdrop_cap = 100_000_000
+        self.fail_with: dict[str, tuple[int, str]] = {}  # path suffix -> (http status, code) for one failing answer
+        self.cutoff = timedelta(seconds=30)
+        self.sent: dict[str, str] = {}  # sha256(message + signature) -> signature
+        self.expired = False
 
     # ---- the user's deposit transaction (not an HTTP endpoint) ----
     def deposit(self, bet_id: str, wallet: str, side: int, amount: int) -> None:
@@ -65,7 +75,11 @@ class FakeChainService:
             return httpx.Response(200, json={"ok": True, "cluster": "devnet", "program_id": "P", "payer_sol": self.payer_sol, "oracle_sol": self.oracle_sol})
         if request.headers.get("x-chain-secret") != SECRET:
             return httpx.Response(401, json={"ok": False, "code": "UNAUTHORIZED", "detail": "bad secret"})
-        key = f"{request.method} {path.rsplit('/', 1)[-1]}"
+        suffix = path.rsplit("/", 1)[-1]
+        if suffix in self.fail_with:
+            status, code = self.fail_with.pop(suffix)
+            return httpx.Response(status, json={"ok": False, "code": code, "detail": code})
+        key = f"{request.method} {suffix}"
         if self.broken.get(key, 0) > 0:
             self.broken[key] -= 1
             return httpx.Response(503, text="busy")
@@ -94,9 +108,89 @@ class FakeChainService:
             "vault_base": b["vault"], "treasury_balance_base": b["treasury"], **(extra or {}),
         }
 
+    # ---- wallet, airdrop, deposit build and submit (chunk 3B) ----
+    def set_wallet(self, wallet: str, usdc: int, ata: bool = True) -> None:
+        self.wallets[wallet] = {"ata": ata, "usdc": usdc}
+
+    def _wallet_state(self, wallet: str) -> dict:
+        return self.wallets.setdefault(wallet, {"ata": False, "usdc": 0})
+
+    def _airdrop(self, body: dict) -> dict:
+        if body["amount_base"] > self.airdrop_cap or body["amount_base"] <= 0:
+            raise Fail("INVALID_PARAMS", "amount above the per call cap", 400)
+        w = self._wallet_state(body["wallet"])
+        w["ata"] = True
+        w["usdc"] += body["amount_base"]
+        self.mints.append((body["wallet"], body["amount_base"]))
+        return {"signature": f"airdrop-sig-{len(self.mints)}", "explorer": "https://explorer.test/airdrop", "amount_base": body["amount_base"]}
+
+    def _prevalidate(self, body: dict) -> None:
+        b = self._bet(body["bet_id"])
+        p = b["params"]
+        wallet, side, amount = body["wallet"], body["side"], body["amount_base"]
+        if b["state"] != "open":
+            raise Fail("MARKET_NOT_OPEN", "not open")
+        if self.clock() + self.cutoff >= p["funding_closes_at"]:
+            raise Fail("FUNDING_CLOSED", "closing")
+        if side not in (0, 1) or amount <= 0:
+            raise Fail("INVALID_PARAMS", "bad side or amount", 400)
+        if amount < p["min_stake_base"]:
+            raise Fail("BELOW_MIN", "below min")
+        mine = b["positions"].get(wallet)
+        if mine is None and len(b["positions"]) >= p["max_participants"]:
+            raise Fail("MARKET_FULL", "full")
+        if mine is not None and mine["side"] != side:
+            raise Fail("ALREADY_OTHER_SIDE", "other side")
+        if (mine["amount"] if mine else 0) + amount > p["max_stake_base"]:
+            raise Fail("ABOVE_MAX", "above max")
+        w = self._wallet_state(wallet)
+        if not w["ata"]:
+            raise Fail("NO_TOKEN_ACCOUNT", "no token account")
+        if w["usdc"] < amount:
+            raise Fail("INSUFFICIENT_USDC", "not enough usdc")
+
+    @staticmethod
+    def message_for(body: dict) -> str:
+        return base64.b64encode(json.dumps([body["bet_id"], body["wallet"], body["side"], body["amount_base"]]).encode()).decode()
+
+    def _deposit_build(self, body: dict) -> dict:
+        self._prevalidate(body)
+        return {
+            "transaction_b64": "UNSIGNED:" + self.message_for(body), "message_b64": self.message_for(body), "blockhash": "BH1",
+            "last_valid_block_height": 123, "expires_at": (self.clock() + timedelta(seconds=60)).isoformat(),
+        }
+
+    def _deposit_submit(self, body: dict) -> dict:
+        message = body.get("message_b64") or str(body.get("signed_tx_b64", "")).removeprefix("SIGNED:")
+        sig_part = body.get("user_signature_b64") or "inline"
+        if body.get("message_b64") is None and body.get("signed_tx_b64") is None:
+            raise Fail("TX_REJECTED", "nothing to verify", 400)
+        if message != self.message_for(body):
+            raise Fail("TX_REJECTED", "the transaction does not match the requested deposit", 400)
+        key = hashlib.sha256((message + sig_part).encode()).hexdigest()
+        if key in self.sent:
+            return {"already": True, "signature": self.sent[key], "explorer": "https://explorer.test/" + self.sent[key]}
+        if self.expired:
+            raise Fail("TX_EXPIRED", "expired")
+        self._prevalidate(body)
+        self.deposit(body["bet_id"], body["wallet"], body["side"], body["amount_base"])
+        self._wallet_state(body["wallet"])["usdc"] -= body["amount_base"]
+        sig = f"dep-sig-{len(self.sent) + 1}"
+        self.sent[key] = sig
+        return {"already": False, "signature": sig, "explorer": "https://explorer.test/" + sig}
+
     def _route(self, method: str, path: str, body: dict) -> dict:
         if method == "POST" and path == "/bets":
             return self._create(body)
+        if method == "GET" and path.startswith("/wallet/"):
+            w = self._wallet_state(path.rsplit("/", 1)[-1])
+            return {"wallet": path.rsplit("/", 1)[-1], "has_token_account": w["ata"], "usdc_base": w["usdc"], "sol_lamports": 0}
+        if method == "POST" and path == "/airdrop":
+            return self._airdrop(body)
+        if method == "POST" and path == "/deposit/build":
+            return self._deposit_build(body)
+        if method == "POST" and path == "/deposit/submit":
+            return self._deposit_submit(body)
         m = re.fullmatch(r"/bets/([0-9a-f-]{36})(?:/(\w+))?", path)
         if not m:
             raise Fail("BAD_REQUEST", "not found", 404)

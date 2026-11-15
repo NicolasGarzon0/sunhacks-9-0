@@ -124,7 +124,7 @@ export class ChainService {
 
   // ---- transaction plumbing ----
 
-  private async send(betId: string, instruction: string, ixs: TransactionInstruction[], extraSigners: Keypair[]): Promise<string> {
+  async send(betId: string, instruction: string, ixs: TransactionInstruction[], extraSigners: Keypair[]): Promise<string> {
     const payer = this.cfg.payer;
     const msg = new TransactionMessage({ payerKey: payer.publicKey, recentBlockhash: await this.rpc.getLatestBlockhash(), instructions: ixs }).compileToV0Message();
     const tx = new VersionedTransaction(msg);

@@ -17,6 +17,9 @@ ERROR_CODES = (
     # chunk 3A: the contract and the chain service
     "FUNDING_CLOSED", "PAST_REFUND_DEADLINE", "REFUND_TOO_EARLY", "BOTH_SIDES_REQUIRED", "UNTRUSTED_BET",
     "INVALID_PARAMS", "RPC_ERROR",
+    # chunk 3B: sponsored deposits and the airdrop
+    "NO_TOKEN_ACCOUNT", "INSUFFICIENT_USDC", "TX_EXPIRED", "TX_REJECTED", "SUBMIT_FAILED", "RATE_LIMITED",
+    "AIRDROP_DISABLED", "AIRDROP_LIMIT",
 )
 STATES = ("open", "locked", "settled", "refunded")
 _BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")  # Solana style public key

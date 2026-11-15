@@ -60,7 +60,8 @@ class RealChainClient:
 
     # --- transport ---
 
-    async def _call(self, method: str, path: str, body: dict | None = None, *, write: bool = False) -> dict:
+    async def _call(self, method: str, path: str, body: dict | None = None, *, write: bool = False,
+                    retry_transport_only: bool = False) -> dict:
         timeout = self._write_timeout if write else self._read_timeout
         last: ChainError | None = None
         for attempt in range(self._retries + 1):
@@ -72,26 +73,30 @@ class RealChainClient:
                 )
             except httpx.HTTPError as e:  # timeouts, connection errors
                 last = ChainError("RPC_ERROR", f"chain service unreachable ({type(e).__name__})")
+                if retry_transport_only and not isinstance(e, httpx.ConnectError):
+                    break  # the request may have reached the service: a mint is not repeated
                 continue
             try:
                 data: Any = resp.json()
             except ValueError:
                 data = None
-            if resp.status_code in RETRY_STATUS:
-                last = ChainError("RPC_ERROR", f"chain service returned HTTP {resp.status_code}")
-                continue
             if resp.status_code == 401:
                 raise ChainError("RPC_ERROR", "chain service rejected the shared secret (check CHAIN_SERVICE_SECRET)")
-            if not isinstance(data, dict):
-                raise ChainError("RPC_ERROR", f"chain service sent an unreadable response (HTTP {resp.status_code})")
-            if data.get("ok") is False or resp.status_code >= 400:
+            if isinstance(data, dict) and (data.get("ok") is False or resp.status_code >= 400) and resp.status_code != 401:
                 raw = str(data.get("code", "RPC_ERROR"))
                 code = CODE_MAP.get(raw, raw)
                 err = ChainError(code if code in ERROR_CODES else "RPC_ERROR", str(data.get("detail") or raw))
-                if err.code == "RPC_ERROR":  # the chain was busy or failing: safe to repeat, every call is idempotent
-                    last = err
-                    continue
-                raise err
+                if err.code != "RPC_ERROR":
+                    raise err  # a business answer (including RATE_LIMITED) is final
+                if retry_transport_only:
+                    raise err  # a mint is not repeated after the service already answered
+                last = err  # the chain was busy or failing: safe to repeat, every call is idempotent
+                continue
+            if resp.status_code in RETRY_STATUS and not retry_transport_only:
+                last = ChainError("RPC_ERROR", f"chain service returned HTTP {resp.status_code}")
+                continue
+            if not isinstance(data, dict):
+                raise ChainError("RPC_ERROR", f"chain service sent an unreadable response (HTTP {resp.status_code})")
             return data
         assert last is not None
         raise last
@@ -144,6 +149,37 @@ class RealChainClient:
 
     async def close_bet(self, bet_id: str) -> None:
         await self._call("POST", f"/bets/{bet_id}/close_bet", {}, write=True)
+
+    # --- sponsored deposits and the airdrop (chunk 3B). Only the real chain has them. ---
+
+    async def wallet(self, wallet: str) -> dict:
+        if not is_valid_wallet(wallet):
+            raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
+        d = await self._call("GET", f"/wallet/{wallet}")
+        return {"has_token_account": bool(d["has_token_account"]), "usdc_base": int(d["usdc_base"]), "sol_lamports": int(d["sol_lamports"])}
+
+    async def airdrop(self, wallet: str, amount_base: int) -> dict:
+        """Mints test USDC. A mint is not idempotent, so only a refused connection (nothing was sent) is retried."""
+        if not is_valid_wallet(wallet):
+            raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
+        return await self._call("POST", "/airdrop", {"wallet": wallet, "amount_base": amount_base}, write=True, retry_transport_only=True)
+
+    async def deposit_build(self, bet_id: str, wallet: str, side: int, amount_base: int) -> dict:
+        if not is_valid_wallet(wallet):
+            raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
+        return await self._call("POST", "/deposit/build", {"bet_id": bet_id, "wallet": wallet, "side": side, "amount_base": amount_base}, write=True)
+
+    async def deposit_submit(self, bet_id: str, wallet: str, side: int, amount_base: int, *, signed_tx_b64: str | None = None,
+                             message_b64: str | None = None, user_signature_b64: str | None = None) -> dict:
+        """Safe to repeat: the service answers the same signature for the same signed bytes."""
+        if not is_valid_wallet(wallet):
+            raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
+        body: dict = {"bet_id": bet_id, "wallet": wallet, "side": side, "amount_base": amount_base}
+        if signed_tx_b64 is not None:
+            body["signed_tx_b64"] = signed_tx_b64
+        else:
+            body["message_b64"], body["user_signature_b64"] = message_b64, user_signature_b64
+        return await self._call("POST", "/deposit/submit", body, write=True)
 
     async def health(self) -> dict | None:
         d = await self._call("GET", "/health")

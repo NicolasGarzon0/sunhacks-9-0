@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { ChainService } from "./chain.ts";
+import type { DepositService, SubmitArgs } from "./deposit.ts";
+import type { WalletService } from "./wallet.ts";
 import { ChainError, httpStatus, toChainError } from "./errors.ts";
 import type { Logger } from "./logger.ts";
 
@@ -35,7 +37,7 @@ function intField(body: Record<string, unknown>, name: string): number {
   return v;
 }
 
-export interface ServerDeps { chain: ChainService; secret: string; logger: Logger }
+export interface ServerDeps { chain: ChainService; secret: string; logger: Logger; deposits?: DepositService; wallets?: WalletService }
 
 export function createServer(deps: ServerDeps): http.Server {
   const { chain, logger } = deps;
@@ -76,6 +78,28 @@ export function createServer(deps: ServerDeps): http.Server {
           return reply(res, httpStatus(err.code), failBody(err));
         }
       };
+
+      if (deps.wallets && req.method === "GET" && path.startsWith("/wallet/")) {
+        const w = deps.wallets;
+        return send(() => w.wallet(decodeURIComponent(path.slice("/wallet/".length))));
+      }
+      if (deps.wallets && req.method === "POST" && path === "/airdrop") {
+        const w = deps.wallets;
+        return send(() => w.airdrop(String(body.wallet ?? ""), body.amount_base));
+      }
+      if (deps.deposits && req.method === "POST" && (path === "/deposit/build" || path === "/deposit/submit")) {
+        const d = deps.deposits;
+        const base = () => {
+          if (typeof body.bet_id !== "string" || typeof body.wallet !== "string") throw new ChainError("BAD_REQUEST", "bet_id and wallet are required");
+          return { bet_id: body.bet_id, wallet: body.wallet, side: intField(body, "side"), amount_base: intField(body, "amount_base") };
+        };
+        if (path === "/deposit/build") return send(() => d.build(base()));
+        return send(() => {
+          const str = (k: string) => (typeof body[k] === "string" ? (body[k] as string) : undefined);
+          const a: SubmitArgs = { ...base(), signed_tx_b64: str("signed_tx_b64"), message_b64: str("message_b64"), user_signature_b64: str("user_signature_b64") };
+          return d.submit(a);
+        });
+      }
 
       if (req.method === "POST" && path === "/bets") {
         return send(() => {

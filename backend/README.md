@@ -38,7 +38,7 @@ The backend reads the repo-root `.env`, shared with the gateway (see the root `.
 Startup fails with a message naming every missing required variable.
 
 ## Database
-Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` (through `0007_snapshots`) in order in the
+Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` (through `0008_airdrops`) in order in the
 Supabase SQL editor (or via the Supabase MCP): `0001_init` (inbound_messages, roster), `0002_drafts`
 (one bet request draft per sender handle) `0003_drafts_game_only` (status `collecting|ready`, pending
 field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`). All tables have RLS enabled with no policies, so the
@@ -320,6 +320,34 @@ mode), `TREASURY_PUBKEY` (required; must equal the chain service's, which reject
 - **Deposits** come from the deposit page in chunk 3B (user signs, sponsor co-signs). Until then
   `chain-service/scripts/dev_deposit.ts` makes them.
 
+## Sponsored deposits and the airdrop (chunk 3B)
+
+With `CHAIN_MODE=real` the market API also serves the deposit page (full reference in `docs/deposit-page-api.md`; on the mock these
+four answer 404 and the mock `POST /markets/{token}/deposits` stays):
+`GET /markets/{token}/wallet?wallet=`, `POST /markets/{token}/airdrop`, `POST /markets/{token}/deposit_tx`,
+`POST /markets/{token}/deposit_submit` (`markets/deposits.py`, `DepositFlow`). The backend never signs: `deposit_tx` asks chain-service
+for the one unsigned transaction and adds a summary (team, amount, fee line, payout preview net of fee including the wallet's existing
+stake); `deposit_submit` forwards the user's signature, and chain-service verifies the exact bytes before the sponsor co-signs (rules in
+`chain-service/README.md`). On success it stores the display name (validated before anything is sent), calls `maybe_close_when_full`
+and returns the signature, the explorer link and the updated market view. Dollars become base units with `parse_usd` (more than 6
+decimals, negatives and non numbers are `BAD_REQUEST`). HTTP: rule errors 409 with the code, bad input 400, bad token 404, expired
+link 410, rate limit 429, chain or chain service failure 502 (`RPC_ERROR`, `SUBMIT_FAILED`, `UNTRUSTED_BET`).
+
+**Airdrop policy** (`POST /airdrop`, only when `AIRDROP_ENABLED=true`; table `airdrops`, migration `0008_airdrops.sql`, re-runnable, RLS on,
+no policies): a valid link and a valid base58 wallet are required. The allowance is `AIRDROP_MAX_PER_WALLET_USD` (default 25) for the
+whole life of a wallet; a repeat request with the allowance used up returns `ok`, `minted_base: 0` and the current balance and mints
+nothing; a partly used allowance is topped up to the cap. `AIRDROP_DAILY_CAP_USD` (default 500, UTC day) limits all wallets together
+(`AIRDROP_LIMIT`), `AIRDROP_PER_IP_PER_HOUR` (default 5) limits one address (`RATE_LIMITED`). The reservation is taken under an advisory
+lock before minting and released again when the mint fails; a mint is never retried after the chain service answered.
+
+**Rate limits are in memory, so per process** (a second backend instance counts on its own): the public endpoints above are limited per
+IP (`PUBLIC_RATE_PER_IP_PER_MIN`, default 30) and per wallet (`PUBLIC_RATE_PER_WALLET_PER_MIN`, default 10) per minute. The client IP is
+the peer address; `TRUST_PROXY_HEADERS=true` takes the first `X-Forwarded-For` entry instead, only turn it on behind a proxy you control.
+
+Env: `AIRDROP_ENABLED`, `AIRDROP_MAX_PER_WALLET_USD`, `AIRDROP_DAILY_CAP_USD`, `AIRDROP_PER_IP_PER_HOUR`, `PUBLIC_RATE_PER_IP_PER_MIN`,
+`PUBLIC_RATE_PER_WALLET_PER_MIN`, `TRUST_PROXY_HEADERS`. chain-service additionally takes `MINT_AUTHORITY_SECRET_KEY` (airdrop),
+`DEPOSIT_CUTOFF_SECONDS`, `DEPOSIT_BUILD_TTL_SECONDS` and its own rate limit settings.
+
 **Other notes for the real client.**
 - The worker watches deposits through `maybe_close_when_full` and `chain.get_bet` on every tick for every open bet: those are
   single account reads on chain.
@@ -334,7 +362,7 @@ mode), `TREASURY_PUBKEY` (required; must equal the chain service's, which reject
 
 ## Tests
 ```sh
-.venv/bin/pytest -q            # 425 tests with the mock chain (and the fake chain service)
+.venv/bin/pytest -q            # 470 tests with the mock chain (and the fake chain service)
 ```
 Uses `TEST_DATABASE_URL` if set, otherwise spins up a throwaway local Postgres (needs `initdb`/`pg_ctl`,
 e.g. Homebrew `postgresql`). Each test uses its own schema. The gateway and Anthropic are mocked. Never touches
