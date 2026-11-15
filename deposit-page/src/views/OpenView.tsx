@@ -130,7 +130,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
               errorCode={preview.error} feeBps={market.fee_bps} hasInput={parsed.ok}
             />
           ) : null}
-          {walletStepHidden || !wallet.ready ? null : (
+          {walletStepHidden || !wallet.ready || held !== null ? null : (
             <div className="field">
               <label htmlFor="display-name" className="label">Display name <span className="muted">(optional)</span></label>
               <input
