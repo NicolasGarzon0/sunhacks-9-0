@@ -1,5 +1,5 @@
 import { PrivyProvider, useLogin, useLogout, usePrivy } from "@privy-io/react-auth";
-import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
+import { useSignTransaction, useStandardWallets, useWallets } from "@privy-io/react-auth/solana";
 import { useEffect, type ReactNode } from "react";
 import type { PrivyWalletProvider } from "./PrivyWalletProvider";
 import { WalletError } from "./types";
@@ -44,6 +44,10 @@ function Bridge({ provider }: { provider: PrivyWalletProvider }) {
   // Address: the wallet list when it has one, else the user record. Signing needs the list's wallet object (found by address).
   const address = wallets[0]?.address ?? linkedSolanaAddress(user);
   const wallet = wallets.find((w) => w.address === address) ?? null;
+  // Fallback signer when the list has no wallet object. Privy's own standard wallet is always in this list, and its
+  // signTransaction only needs the address (it looks the wallet up on the user record).
+  const { wallets: standardWallets } = useStandardWallets();
+  const standardWallet = standardWallets.find((w) => w.features["solana:signTransaction"]) ?? null;
 
   useEffect(() => {
     provider.attach({
@@ -53,13 +57,21 @@ function Bridge({ provider }: { provider: PrivyWalletProvider }) {
       login: () => login({ loginMethods: ["email"] }), // default to email; the user can still pick SMS if they close and reopen
       logout: () => logout(),
       signTransaction: async (tx) => {
-        if (!wallet) throw new WalletError("WALLET", "the wallet is not ready yet, try again in a moment");
+        if (!address) throw new WalletError("WALLET", "no wallet address");
         // Sign only. chain is devnet, Privy's own confirmation screen is off, nothing is sent.
-        const out = await signTransaction({ transaction: tx, wallet, chain: "solana:devnet", options: { uiOptions: { showWalletUIs: false } } });
+        const options = { uiOptions: { showWalletUIs: false } };
+        if (wallet) {
+          const out = await signTransaction({ transaction: tx, wallet, chain: "solana:devnet", options });
+          return out.signedTransaction;
+        }
+        const feature = standardWallet?.features["solana:signTransaction"];
+        if (!standardWallet || !feature) throw new WalletError("WALLET", "the wallet is not ready yet, try again in a moment");
+        const account = standardWallet.accounts.find((a) => a.address === address) ?? ({ address } as (typeof standardWallet.accounts)[number]);
+        const [out] = await feature.signTransaction({ account, transaction: tx, chain: "solana:devnet", options: options as never }); // the standard type omits Privy's uiOptions, the SDK passes it through
         return out.signedTransaction;
       },
     });
-  }, [provider, ready, authenticated, address, wallet, login, logout, signTransaction]);
+  }, [provider, ready, authenticated, address, wallet, standardWallet, login, logout, signTransaction]);
 
   useEffect(() => () => provider.attach(null), [provider]);
   return null;

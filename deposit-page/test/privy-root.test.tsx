@@ -9,6 +9,7 @@ const sdk = vi.hoisted(() => {
     login: vi.fn<(o?: unknown) => void>(),
     logout: vi.fn<() => Promise<void>>(),
     signTransaction: vi.fn<(i: unknown) => Promise<unknown>>(),
+    standardSign: vi.fn<(...i: unknown[]) => Promise<unknown>>(),
     providerProps: null as null | Record<string, unknown>,
     onError: null as null | ((e: unknown) => void),
   };
@@ -41,6 +42,11 @@ vi.mock("@privy-io/react-auth/solana", async () => {
   return {
     useWallets: () => { use(); return { ready: true, wallets: sdk.s.wallets }; },
     useSignTransaction: () => ({ signTransaction: (i: unknown) => sdk.s.signTransaction(i) }),
+    // Privy's own standard wallet: present even when useWallets is empty. Signing goes through its standard feature.
+    useStandardWallets: () => { use(); return { ready: true, wallets: [{
+      accounts: [] as { address: string }[],
+      features: { "solana:signTransaction": { signTransaction: (...i: unknown[]) => sdk.s.standardSign(...i) } },
+    }] }; },
   };
 });
 
@@ -69,6 +75,7 @@ beforeEach(() => {
   sdk.s.login = vi.fn<(o?: unknown) => void>();
   sdk.s.logout = vi.fn<() => Promise<void>>(async () => { sdk.set({ authenticated: false, wallets: [] }); });
   sdk.s.signTransaction = vi.fn<(i: unknown) => Promise<unknown>>();
+  sdk.s.standardSign = vi.fn<(...i: unknown[]) => Promise<unknown>>();
   sdk.s.providerProps = null;
   sdk.s.ready = true; sdk.s.authenticated = false; sdk.s.wallets = []; sdk.s.user = null; sdk.s.onError = null;
 });
@@ -189,19 +196,54 @@ describe("PrivyRoot", () => {
       } finally { vi.useRealTimers(); }
     });
 
-    it("signing without a wallet object from the SDK is a plain wallet error, not a network error", async () => {
-      sdk.s.authenticated = true; sdk.s.wallets = []; sdk.s.user = privyUser(ADDR);
-      const provider = mount();
-      await waitFor(() => expect(provider.ready).toBe(true));
-      // reaches the bridge only after the safety checks; use a real tx so they pass
+    async function setup() {
       const seed = ed.utils.randomSecretKey();
       const pub = await ed.getPublicKeyAsync(seed);
+      const addr = base58Encode(pub);
       const message = new Uint8Array([2, 0, 1, 3, ...new Uint8Array(32).fill(7), ...pub, ...new Uint8Array(32).fill(9), ...new Uint8Array(32).fill(5), 0]);
       const wire = new Uint8Array([2, ...new Uint8Array(128), ...message]);
-      sdk.set({ user: privyUser(base58Encode(pub)) });
-      await waitFor(() => expect(provider.address).toBe(base58Encode(pub)));
-      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET" });
+      sdk.s.authenticated = true; sdk.s.wallets = []; sdk.s.user = privyUser(addr); // useWallets is empty
+      const provider = mount();
+      await waitFor(() => expect(provider.ready).toBe(true));
+      return { seed, pub, addr, message, wire, provider };
+    }
+
+    it("signs with Privy's standard wallet when useWallets is empty, headless on devnet, and still verifies the result", async () => {
+      const { seed, addr, message, wire, provider } = await setup();
+      sdk.s.standardSign.mockImplementation(async () => {
+        const out = wire.slice();
+        out.set(await ed.signAsync(message, seed), 65);
+        return [{ signedTransaction: out }];
+      });
+      const result = await provider.signDeposit(toBase64(wire), toBase64(message));
+      expect(result).toMatchObject({ message_b64: toBase64(message) });
       expect(sdk.s.signTransaction).not.toHaveBeenCalled();
+      expect(sdk.s.standardSign).toHaveBeenCalledWith(expect.objectContaining({
+        account: { address: addr }, transaction: wire, chain: "solana:devnet",
+        options: { uiOptions: { showWalletUIs: false } },
+      }));
+    });
+
+    it("keeps the safety checks on the fallback path: a changed message or a wrong signature is refused", async () => {
+      const { seed, message, wire, provider } = await setup();
+      const tampered = wire.slice(); tampered[tampered.length - 1] ^= 1; // the wallet changed the message
+      sdk.s.standardSign.mockResolvedValueOnce([{ signedTransaction: tampered }]);
+      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET" });
+
+      const unsigned = wire.slice(); // the wallet returned it unsigned: the depositor signature is not valid
+      sdk.s.standardSign.mockResolvedValueOnce([{ signedTransaction: unsigned }]);
+      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET" });
+
+      const wrongKey = wire.slice(); wrongKey.set(await ed.signAsync(message, ed.utils.randomSecretKey()), 65);
+      sdk.s.standardSign.mockResolvedValueOnce([{ signedTransaction: wrongKey }]);
+      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET" });
+      void seed;
+    });
+
+    it("maps a fallback signing failure like the normal path (rejected, or network)", async () => {
+      const { message, wire, provider } = await setup();
+      sdk.s.standardSign.mockRejectedValueOnce(new Error("User rejected the request"));
+      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET_REJECTED" });
     });
   });
 
