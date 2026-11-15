@@ -4,8 +4,7 @@ import { Footer } from "./components/Basics";
 import { config } from "./config";
 import { matchRoute } from "./router";
 import { HomeView, InvalidView } from "./views/Views";
-import { createWalletProvider } from "./wallet";
-import { WalletProviderContext } from "./wallet/WalletContext";
+import { createWalletProvider, WalletRoot } from "./wallet";
 
 export function App({ pathname }: { pathname?: string }) {
   const [path, setPath] = useState(pathname ?? window.location.pathname);
@@ -18,7 +17,7 @@ export function App({ pathname }: { pathname?: string }) {
   const provider = useMemo(() => createWalletProvider(config.walletMode), []);
   const route = matchRoute(path);
   return (
-    <WalletProviderContext provider={provider}>
+    <WalletRoot provider={provider}>
       <div className="shell">
         <div className="topbar"><a href="/" className="wordmark">handshake<span>.</span></a></div>
         <main className="page">
@@ -27,6 +26,6 @@ export function App({ pathname }: { pathname?: string }) {
           {route.name === "notfound" ? (<><InvalidView /><Footer /></>) : null}
         </main>
       </div>
-    </WalletProviderContext>
+    </WalletRoot>
   );
 }

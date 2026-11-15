@@ -20,7 +20,8 @@ export default tseslint.config(
   },
   {
     // The UI must not import anything wallet specific outside src/wallet (only the context/barrel).
-    files: ["src/components/**", "src/views/**", "src/hooks/**", "src/App.tsx"],
+    // Privy is imported by src/wallet/PrivyRoot.tsx only (test files mock it, they do not import it).
+    files: ["src/components/**", "src/views/**", "src/hooks/**", "src/App.tsx", "src/BetPage.tsx", "src/main.tsx", "src/lib/**", "src/api/**"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         "**/wallet/LocalDevWalletProvider*", "**/wallet/PrivyWalletProvider*", "@noble/*", "@privy-io/*",

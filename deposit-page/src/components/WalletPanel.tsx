@@ -20,11 +20,23 @@ interface Props {
 export function WalletPanel(p: Props) {
   const [confirmReset, setConfirmReset] = useState(false);
   const { wallet } = p;
+  if (wallet.provider.requiresLogin && !wallet.address) {
+    return (
+      <section className="wallet" aria-label="Your wallet">
+        <p className="label">Wallet</p>
+        <p>Log in with your email to get a wallet. It takes a few seconds.</p>
+        <button type="button" className="btn" disabled={wallet.connecting} onClick={wallet.retry}>
+          {wallet.connecting ? "Logging in…" : "Log in"}
+        </button>
+        {wallet.error ? <p className="field-error" role="alert">{wallet.error}</p> : null}
+      </section>
+    );
+  }
   return (
     <section className="wallet" aria-label="Your wallet">
       <div className="wallet-row">
         <div>
-          <span className="label">{wallet.provider.name}</span>
+          <span className="label">{wallet.provider.requiresLogin ? "Signed in" : wallet.provider.name}</span>
           <p className="addr" title={wallet.address ?? undefined}>{wallet.address ? shortAddr(wallet.address) : "Preparing…"}</p>
         </div>
         <div className="wallet-bal">
@@ -32,8 +44,13 @@ export function WalletPanel(p: Props) {
           <p className="bal">{p.info ? `$${p.info.usdc_usd}` : p.loading ? "…" : "–"}</p>
         </div>
       </div>
+      {wallet.provider.requiresLogin ? (
+        <p className="testnote">
+          <button type="button" className="link" onClick={() => void wallet.reset()}>Log out</button>
+        </p>
+      ) : null}
       {wallet.error ? (
-        <p className="field-error" role="alert">{wallet.error} <button type="button" className="link" onClick={wallet.retry}>Try again</button></p>
+        <p className="field-error" role="alert">{wallet.error}{wallet.provider.requiresLogin ? null : <> <button type="button" className="link" onClick={wallet.retry}>Try again</button></>}</p>
       ) : null}
       {wallet.provider.isTest ? (
         <p className="testnote">

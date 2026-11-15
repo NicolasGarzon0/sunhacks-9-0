@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@noble/ed25519": "^3.2.0",
+    "@privy-io/react-auth": "^3.51.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

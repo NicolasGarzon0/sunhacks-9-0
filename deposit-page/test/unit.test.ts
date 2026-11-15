@@ -206,10 +206,13 @@ describe("LocalDevWalletProvider", () => {
     await w.connect(); off(); await w.disconnect();
     expect(n).toBe(1);
   });
-  it("selects the provider from the mode and keeps privy a stub", async () => {
-    expect(createWalletProvider("local").isTest).toBe(true);
-    const p = createWalletProvider("privy");
-    await expect(p.connect()).rejects.toThrow("not implemented in chunk 4");
-    await expect(p.signDeposit("a", "b")).rejects.toThrow("not implemented in chunk 4");
+  it("selects the provider from the mode", () => {
+    const local = createWalletProvider("local");
+    expect(local.isTest).toBe(true);
+    expect(local.requiresLogin).toBe(false);
+    const privy = createWalletProvider("privy");
+    expect(privy.isTest).toBe(false);
+    expect(privy.requiresLogin).toBe(true);
+    expect(privy.address).toBeNull();
   });
 });

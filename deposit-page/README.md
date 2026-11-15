@@ -15,7 +15,9 @@ npm run dev                     # http://127.0.0.1:5173
 | Variable | Default | Meaning |
 |---|---|---|
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8788` | backend base URL (`/markets` is appended if missing) |
-| `VITE_WALLET_MODE` | `local` | `local` (throwaway test wallet) or `privy` (stub until chunk 5) |
+| `VITE_WALLET_MODE` | `local` | `local` (throwaway test wallet) or `privy` (email login, embedded Solana wallet) |
+| `VITE_PRIVY_APP_ID` | empty | Privy app id (public). Required when `VITE_WALLET_MODE=privy` |
+| `VITE_PRIVY_CLIENT_ID` | empty | Privy client id (public). Optional: passed to Privy only if set |
 | `VITE_EXPLORER_CLUSTER` | `devnet` | cluster in the explorer links |
 
 The backend must allow this page's origin: set `DEPOSIT_PAGE_URL` (and `DEPOSIT_PAGE_ORIGIN` if it differs) to the page's URL, and for
@@ -57,20 +59,39 @@ picks the implementation.
 - `LocalDevWalletProvider`: generates an ed25519 key in the browser (`@noble/ed25519`), stores the 32 byte seed in `localStorage` (try/catch, with an
   in-memory fallback), signs the message locally and shows the "test wallet" notice with a two step **Reset wallet**. Devnet test money only.
   Anyone with access to the browser profile can read the key: never put value in it.
-- `PrivyWalletProvider`: a documented stub that throws `not implemented in chunk 4`. `VITE_WALLET_MODE=privy` selects it.
+- `PrivyWalletProvider` (`VITE_WALLET_MODE=privy`): see below.
 
-### Chunk 5: adding Privy
+### Privy wallet (real users)
 
-Implement `PrivyWalletProvider` with the same interface (login, embedded Solana wallet public key as `address`, `signDeposit` signing the
-`messageB64` bytes and returning `{ message_b64, user_signature_b64 }`), add the Privy app id as a `VITE_` variable, and set
-`VITE_WALLET_MODE=privy`. No component changes: the UI already works from `useWallet()`. Never alter the message before signing: the server
-rebuilds the exact transaction and rejects anything that differs.
+Switch modes with one variable. In `deposit-page/.env.local`:
+
+```sh
+VITE_WALLET_MODE=privy
+VITE_PRIVY_APP_ID=<your Privy app id>      # public id, read from env, never hardcoded
+# VITE_PRIVY_CLIENT_ID=<client id>         # optional, only if your Privy app has one
+```
+
+Leave `VITE_WALLET_MODE` unset (or `local`) for the throwaway test wallet: that build does not load the Privy SDK at all. There is **no Privy
+app secret** and the page must never use one. In the Privy dashboard the allowed origin must include the page's origin (`http://localhost:5173`
+for dev) and the login methods email and SMS (SMS works in the US and Canada only; the page opens the email form by default).
+
+- Only `src/wallet/` imports Privy (`PrivyRoot.tsx` has the hooks, lazy loaded; `PrivyWalletProvider.ts` has no SDK import and is driven through
+  a small bridge). `WalletRoot` wraps the app in `PrivyProvider` only in privy mode. ESLint enforces it for the rest of `src/`.
+- Config: `loginMethods: ["email", "sms"]`, `embeddedWallets.solana.createOnLogin: "users-without-wallets"`, `embeddedWallets.showWalletUIs: false`
+  (Privy's own confirmation screens are off, our page runs the flow), external wallets off, signing on `solana:devnet`.
+- The UI: a **Log in** button when there is no wallet (Privy's email screen opens), then "Signed in" with the shortened wallet address and a
+  **Log out** button. The test USDC airdrop and the deposit use the Privy address exactly like the local wallet.
+- **The wallet only signs, never sends.** `signDeposit` hands the service's unsigned legacy transaction to Privy's `signTransaction`
+  (`@privy-io/react-auth/solana`), then checks the result before it is used: the signed message must equal `message_b64` byte for byte (fee payer,
+  blockhash and instructions unchanged), the signature must be in the depositor's slot and must verify against that message. Anything else is
+  refused and nothing is submitted. It returns `{ message_b64, user_signature_b64 }`, the same shape the local wallet returns.
+- Errors (plain copy in `src/lib/errors.ts`): `WALLET_LOGIN_CANCELLED`, `WALLET_REJECTED`, `WALLET_NETWORK`, and the generic `WALLET`.
 
 ## Tests
 
 `npm test` runs Vitest: unit tests for the pure logic (amount parsing, countdown, error copy against the API doc, status to view, polling
 backoff, base58, the local wallet) and React Testing Library tests with a mocked API for each status view, deposit success, `TX_EXPIRED`, every
-blocking error, the disabled other side, the full market message, the airdrop flow, hostile display names and the Privy stub.
+blocking error, the disabled other side, the full market message, the airdrop flow, hostile display names, and the Privy wallet (a mocked SDK for login, address, signing, rejection and logout, plus byte level checks that the signed message is unchanged).
 
 ## Live check (devnet)
 

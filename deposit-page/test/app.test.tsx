@@ -12,6 +12,9 @@ vi.mock("../src/api/client", async (orig) => ({ ...(await orig<typeof import("..
 
 import { ApiError } from "../src/api/client";
 import { BetPage } from "../src/BetPage";
+import * as ed from "@noble/ed25519";
+import { base58Encode, toBase64 } from "../src/lib/format";
+import type { PrivyBridge } from "../src/wallet/PrivyWalletProvider";
 import { LocalDevWalletProvider } from "../src/wallet/LocalDevWalletProvider";
 import { PrivyWalletProvider } from "../src/wallet/PrivyWalletProvider";
 import type { WalletProvider } from "../src/wallet";
@@ -376,10 +379,86 @@ describe("untrusted text and wallet", () => {
     expect(addr()).toMatch(/…/);
   });
 
-  it("surfaces the privy stub's error instead of crashing", async () => {
+  it("shows a Log in button and a disabled deposit for a login wallet that is not signed in", async () => {
     renderBet(new PrivyWalletProvider());
     await screen.findByRole("radiogroup");
-    expect(await screen.findByText(/not implemented in chunk 4/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Pick a team/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Log in to deposit" })).toBeDisabled();
+  });
+});
+
+describe("login wallet (Privy) in the page", () => {
+  /** A provider wired to a fake Privy: login makes a real key and signs for real. */
+  async function setup() {
+    const seed = ed.utils.randomSecretKey();
+    const pub = await ed.getPublicKeyAsync(seed);
+    const address = base58Encode(pub);
+    const message = new Uint8Array([2, 0, 1, 3, ...new Uint8Array(32).fill(7), ...pub, ...new Uint8Array(32).fill(9), ...new Uint8Array(32).fill(5), 0]);
+    const wire = new Uint8Array([2, ...new Uint8Array(128), ...message]);
+    const provider = new PrivyWalletProvider();
+    const st = { authenticated: false, address: null as string | null };
+    const bridge: PrivyBridge = {
+      sdkReady: true, authenticated: false, address: null,
+      login: () => { st.authenticated = true; st.address = address; provider.attach({ ...bridge, ...st }); },
+      logout: async () => { st.authenticated = false; st.address = null; provider.attach({ ...bridge, ...st }); },
+      signTransaction: async (w) => { const o = w.slice(); o.set(await ed.signAsync(message, seed), 65); return o; },
+    };
+    provider.attach(bridge);
+    return { provider, address, wire, message };
+  }
+
+  it("asks the user to log in, then shows a shortened address and a Log out button", async () => {
+    const { provider, address } = await setup();
+    renderBet(provider);
+    await screen.findByRole("radiogroup");
+    expect(screen.queryByText(/Test wallet on devnet/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Log in" }));
+    await waitFor(() => expect(screen.getByText("Signed in")).toBeInTheDocument());
+    const shown = screen.getByTitle(address);
+    expect(shown.textContent).toMatch(/…/);
+    expect(shown.textContent).not.toBe(address);
+    expect(api.wallet).toHaveBeenCalledWith("tok", address);
+    await userEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(await screen.findByRole("button", { name: "Log in" })).toBeInTheDocument();
+  });
+
+  it("gets test USDC and deposits with the Privy address exactly like the local wallet", async () => {
+    const { provider, address, wire, message } = await setup();
+    api.wallet.mockResolvedValue({ ok: true, wallet: address, has_token_account: false, usdc_base: 0, usdc_usd: "0.00" });
+    api.airdrop.mockResolvedValue({ ...funded, wallet: address, minted_base: 25e6, minted_usd: "25.00", signature: "AIR", explorer: "x" });
+    api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
+    api.depositSubmit.mockImplementation(async () => ({ ok: true, signature: "SIG9", explorer: "x", already: false, market: market() }));
+    renderBet(provider);
+    await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Get test USDC" }));
+    expect(await screen.findByText("$25.00")).toBeInTheDocument();
+    expect(api.airdrop).toHaveBeenCalledWith("tok", address);
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
+    await userEvent.click(await screen.findByRole("button", { name: /Deposit \$5 on Arizona Cardinals/ }));
+    expect(await screen.findByTestId("success")).toBeInTheDocument();
+    expect(api.depositTx).toHaveBeenCalledWith("tok", address, 1, "5");
+    const args = api.depositSubmit.mock.calls[0];
+    expect(args[1]).toBe(address);
+    expect(args[4]).toMatchObject({ message_b64: toBase64(message) });
+  });
+
+  it("shows plain copy when the signature is rejected, and sends nothing", async () => {
+    const { provider, address, wire, message } = await setup();
+    const real = provider.signDeposit.bind(provider);
+    void real;
+    api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
+    renderBet(provider);
+    await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
+    await waitFor(() => expect(screen.getByText("$25.00")).toBeInTheDocument());
+    // make the next sign attempt fail like a rejected prompt
+    const spy = vi.spyOn(provider, "signDeposit").mockRejectedValue(new (await import("../src/wallet")).WalletError("WALLET_REJECTED"));
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
+    await userEvent.click(await screen.findByRole("button", { name: /Deposit \$5 on Arizona Cardinals/ }));
+    expect(await screen.findByText("The signature was not approved, so nothing was sent. Please try again.")).toBeInTheDocument();
+    expect(api.depositSubmit).not.toHaveBeenCalled();
+    spy.mockRestore();
+    void address;
   });
 });

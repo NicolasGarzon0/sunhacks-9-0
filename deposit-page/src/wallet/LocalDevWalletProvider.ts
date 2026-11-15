@@ -11,6 +11,7 @@ const STORAGE_KEY = "handshake.devwallet.v1";
 export class LocalDevWalletProvider implements WalletProvider {
   readonly name = "Local test wallet";
   readonly isTest = true;
+  readonly requiresLogin = false;
   private seed: Uint8Array | null = null;
   private _address: string | null = null;
   private _ready = false;

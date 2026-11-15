@@ -9,7 +9,7 @@ export const DOCUMENTED_CODES = [
   "RPC_ERROR", "SUBMIT_FAILED", "UNTRUSTED_BET",
 ] as const;
 
-export const PAGE_CODES = ["NETWORK", "INTERNAL", "NOT_FOUND", "WALLET"] as const;
+export const PAGE_CODES = ["NETWORK", "INTERNAL", "NOT_FOUND", "WALLET", "WALLET_LOGIN_CANCELLED", "WALLET_REJECTED", "WALLET_NETWORK"] as const;
 export type KnownCode = (typeof DOCUMENTED_CODES)[number] | (typeof PAGE_CODES)[number];
 
 const SERVER = "Something went wrong on our side. Please try again.";
@@ -42,6 +42,9 @@ export const ERROR_COPY: Record<KnownCode, (c: ErrorContext) => string> = {
   INTERNAL: () => SERVER,
   NOT_FOUND: () => "Deposits are not available on this server right now.",
   WALLET: () => "We could not sign with your wallet. Please try again.",
+  WALLET_LOGIN_CANCELLED: () => "Login was cancelled. Log in to continue.",
+  WALLET_REJECTED: () => "The signature was not approved, so nothing was sent. Please try again.",
+  WALLET_NETWORK: () => "We could not reach the login service. Check your connection and try again.",
 };
 
 export const UNKNOWN_COPY = "Something unexpected happened. Please try again.";

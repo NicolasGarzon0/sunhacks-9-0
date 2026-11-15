@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { DepositTx, SubmitResult } from "../api/types";
-import type { WalletProvider } from "../wallet";
+import { WalletError, type WalletProvider } from "../wallet";
 
 export type DepositStep = "idle" | "preparing" | "signing" | "sending" | "confirmed" | "error";
 
@@ -42,7 +42,7 @@ export function useDeposit(token: string, provider: WalletProvider, address: str
         try {
           signed = await provider.signDeposit(tx.transaction_b64, tx.message_b64);
         } catch (e) {
-          set({ step: "error", error: { code: "WALLET", detail: e instanceof Error ? e.message : "" }, summary });
+          set({ step: "error", error: { code: e instanceof WalletError ? e.code : "WALLET", detail: e instanceof Error ? e.message : "" }, summary });
           return null;
         }
         set({ step: "sending" });
