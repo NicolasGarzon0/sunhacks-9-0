@@ -103,9 +103,17 @@ async def test_participants_and_position_in_every_status(client, market, provide
     await check("locked", {1: None, 2: None, 3: None})
     await force_settle(repo, market, bet.id, 1)  # side 1 holds 30 vs losing 10: fee 0.5, distributable 39.5
     await check("settled", {1: 0, 2: 26_333_333, 3: 13_166_666})
+    # what the worker does: a claim task per winner, completed after the on chain claim
+    await market.ensure_payout_tasks(await repo.get_bet(bet.id))
     await chain.claim(bet.id, w(3))
+    [task] = [t_ for t_ in await repo.payout_tasks(bet.id) if t_.wallet == w(3)]
+    await repo.task_done(task.id, 13_166_666, None, bet.kickoff_utc)
     _, pos = await get(client, t, "/position", wallet=w(3))
     assert pos["paid"] is True and pos["payout_base"] == 13_166_666
+    # the claimed position is gone from the chain, but the link view still lists it (from the snapshot)
+    assert w(3) not in {p.wallet for p in await chain.get_positions(bet.id)}
+    code, listing = await get(client, t, "/participants")
+    assert code == 200 and {p["wallet"] for p in listing["participants"]} == {w(1), w(2), w(3)}
     # a refunded market pays stakes back
     other = await open_bet(market, provider, repo, handle="+15550002222")
     t2 = market.signer.token(other.id)

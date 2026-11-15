@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from app import templates as T
 from app.gateway_client import GatewayClient
 from app.logging import Logger, err_detail, mask_handle
-from app.repository import Bet, Repository
+from app.repository import Bet, Repository, Snapshot
 from games.models import Game
 from games.provider import GameProvider
 
@@ -132,7 +132,7 @@ class MarketService:
         if kind == "failed":
             return T.MARKET_FAILED
         if kind == "locked":
-            return T.market_locked(bet, (await self.chain.get_bet(bet.id)).side_totals)
+            return T.market_locked(bet, self._totals(await self.snapshots_for(bet)))
         if kind == "refunded":
             return T.market_refunded(bet)
         if kind == "result":
@@ -186,7 +186,12 @@ class MarketService:
         try:
             await self.chain.create_bet(
                 bet.id,
-                BetParams(bet.fee_bps, bet.treasury, bet.min_stake_base, bet.max_stake_base, bet.max_participants),
+                BetParams(
+                    bet.fee_bps, bet.treasury, bet.min_stake_base, bet.max_stake_base, bet.max_participants,
+                    funding_closes_at=bet.funding_closes_at,
+                    # the oracle gets until refund_after to settle; after it anyone can refund on chain
+                    refund_after=bet.settle_after + timedelta(hours=self.settings.contract_refund_buffer_hours),
+                ),
             )
             if not await self.repo.set_bet_open(bet.id, bet.id, now):
                 raise RuntimeError("bet was not in game_confirmed")
@@ -239,11 +244,24 @@ class MarketService:
             both = cb.side_totals[0] > 0 and cb.side_totals[1] > 0
             should_lock = both and cb.participant_count >= 2
             at = self.now()
+            if cb.state in ("open", "locked"):
+                await self.take_snapshot(bet.id)  # before lock or refund: the positions as they stand
             if cb.state == "open" and should_lock:
-                cb = await self.chain.lock(bet.id)
+                try:
+                    cb = await self.chain.lock(bet.id)
+                except ChainError as e:
+                    if e.code != "PAST_REFUND_DEADLINE":
+                        raise
+                    # the worker was down past refund_after: the oracle can no longer lock, so refund everyone
+                    self.logger.warn("market.lock_past_deadline", betId=bet.id)
+                    await self.repo.set_refund_intent(bet.id, "no_result")
+                    bet = await self.repo.get_bet(bet.id)  # type: ignore[assignment]
+                    cb = await self.chain.refund_all(bet.id)
             elif cb.state == "open":
                 cb = await self.chain.refund_all(bet.id)
             # a chain that is already locked or refunded (a crashed earlier call) just gets recorded below
+            if cb.state in ("locked", "refunded"):
+                await self.take_snapshot(bet.id)  # again: a last deposit may have landed between the read and the lock
             if cb.state == "locked":
                 if await self.repo.lock_bet(bet.id, cb.total_pool_base, at):
                     self.logger.info("market.locked", betId=bet.id, pool=cb.total_pool_base, participants=cb.participant_count)
@@ -285,9 +303,11 @@ class MarketService:
             await self.repo.set_refund_intent(bet.id, reason)
             cb = await self.chain.get_bet(bet.id)
             if cb.state in ("open", "locked"):
+                await self.take_snapshot(bet.id)  # before the refund, so the positions are on record
                 cb = await self.chain.refund_all(bet.id)
             if cb.state != "refunded":
                 raise MarketError("WRONG_STATE", f"chain is {cb.state}; cannot refund")
+            await self.take_snapshot(bet.id)  # no-op when nothing changed; catches a deposit that raced the refund
             fresh = await self.repo.get_bet(bet.id)
             final_reason = fresh.refund_reason or reason
             if await self.repo.refund_bet(bet.id, final_reason, cb.total_pool_base, self.now()):
@@ -298,7 +318,17 @@ class MarketService:
             return await self.repo.get_bet(bet.id)
 
     async def settle_market(self, bet_id: str, winning_side: int) -> Bet:
-        """Settle a locked market on the chain, record it, create winner tasks, queue the result text. Safe twice."""
+        """Settle a locked market on the chain, record it, create winner tasks, queue the result text. Safe twice.
+        Past refund_after the oracle can no longer settle, so everyone is refunded instead (reason no_result)."""
+        try:
+            return await self._settle_locked(bet_id, winning_side)
+        except ChainError as e:
+            if e.code != "PAST_REFUND_DEADLINE":
+                raise
+            self.logger.warn("market.settle_past_deadline", betId=bet_id)
+            return await self.refund_market(bet_id, "no_result")
+
+    async def _settle_locked(self, bet_id: str, winning_side: int) -> Bet:
         async with self._lock_for(bet_id):
             bet = await self.repo.get_bet(bet_id)
             if bet is None:
@@ -319,21 +349,63 @@ class MarketService:
                 await self.queue_notice(fresh, "result")
             return await self.repo.get_bet(bet.id)  # type: ignore[return-value]
 
+    # --- snapshots ---
+
+    async def take_snapshot(self, bet_id: str) -> int:
+        """Copy the chain's open positions into position_snapshots. Adds and follows top ups, never moves a paid row."""
+        try:
+            positions = await self.chain.get_positions(bet_id)
+        except ChainError as e:
+            if e.code == "NOT_FOUND":
+                return 0
+            raise
+        return await self.repo.upsert_snapshots(bet_id, [(p.wallet, p.side, p.amount_base) for p in positions])
+
+    async def take_snapshot_if_missing(self, bet: Bet) -> bool:
+        """For the worker's reconcile pass: a locked market with no snapshots (locked before 0007) gets them now."""
+        if await self.repo.snapshots(bet.id):
+            return False
+        return await self.take_snapshot(bet.id) > 0
+
+    async def snapshots_for(self, bet: Bet) -> list[Snapshot]:
+        """The snapshots of a locked, settled or refunded market; takes them from the chain when none exist yet
+        (a market that closed funding before migration 0007, or a crash)."""
+        snaps = await self.repo.snapshots(bet.id)
+        if not snaps and bet.status in ("locked", "settled", "refunded"):
+            await self.take_snapshot(bet.id)
+            snaps = await self.repo.snapshots(bet.id)
+        return snaps
+
+    @staticmethod
+    def _totals(snaps: list[Snapshot]) -> tuple[int, int]:
+        t = [0, 0]
+        for x in snaps:
+            t[x.side] += x.amount_base
+        return t[0], t[1]
+
     async def ensure_payout_tasks(self, bet: Bet) -> int:
-        """One task per wallet that is owed money: winners after settled, everyone after refunded. Idempotent."""
+        """Claim tasks for every wallet owed money (winners after settled, everyone after refunded) and, after settled,
+        a close_loser task per losing position (it only returns rent). Idempotent. Reads the snapshots."""
         if bet.status not in ("settled", "refunded"):
             return 0
-        cb = await self.chain.get_bet(bet.id)
-        positions = await self.chain.get_positions(bet.id)
+        try:
+            cb = await self.chain.get_bet(bet.id)
+        except ChainError as e:
+            if e.code == "NOT_FOUND":
+                return 0  # the Bet account is already closed: every task was done
+            raise
+        snaps = await self.snapshots_for(bet)
         rows: list[tuple[str, str, int]] = []
         if cb.state == "refunded":
-            rows = [(p.wallet, "refund", p.amount_base) for p in positions]
+            rows = [(x.wallet, "refund", x.amount_base) for x in snaps]
         elif cb.state == "settled":
             ws = cb.winning_side
-            rows = [
-                (p.wallet, "win", compute_payout(p.amount_base, cb.distributable_base, cb.side_totals[ws]))  # type: ignore[index]
-                for p in positions if p.side == ws
-            ]
+            totals = self._totals(snaps)
+            for x in snaps:
+                if x.side == ws:
+                    rows.append((x.wallet, "win", compute_payout(x.amount_base, cb.distributable_base, totals[ws])))  # type: ignore[index]
+                else:
+                    rows.append((x.wallet, "close_loser", 0))
         return await self.repo.create_payout_tasks(bet.id, rows)
 
     def funding_has_closed(self, bet: Bet) -> bool:
@@ -354,9 +426,16 @@ class MarketService:
     def _money(self, base: int) -> dict:
         return {"base": base, "usd": format_usd(base)}
 
-    async def market_view(self, bet: Bet) -> dict:
+    async def _pools(self, bet: Bet) -> tuple[tuple[int, int], int]:
+        """(side totals, participant count). Open markets read the chain; closed ones read the snapshots."""
+        if bet.status in ("locked", "settled", "refunded"):
+            snaps = await self.snapshots_for(bet)
+            return self._totals(snaps), len(snaps)
         cb = await self._chain_view(bet)
-        totals = cb.side_totals if cb else (0, 0)
+        return (cb.side_totals, cb.participant_count) if cb else ((0, 0), 0)
+
+    async def market_view(self, bet: Bet) -> dict:
+        totals, count = await self._pools(bet)
         fee_bps = bet.fee_bps or 0
         view: dict = {
             "ok": True,
@@ -375,7 +454,7 @@ class MarketService:
             },
             "total_pool_base": totals[0] + totals[1],
             "total_pool_usd": format_usd(totals[0] + totals[1]),
-            "participant_count": cb.participant_count if cb else 0,
+            "participant_count": count,
             "limits": {
                 "min_stake_base": bet.min_stake_base, "min_stake_usd": format_usd(bet.min_stake_base or 0),
                 "max_stake_base": bet.max_stake_base, "max_stake_usd": format_usd(bet.max_stake_base or 0),
@@ -391,13 +470,15 @@ class MarketService:
         }
         if bet.status == "locked":
             view["game_pending"] = True
-        if bet.status == "settled" and cb is not None:
-            view["winning_side"] = cb.winning_side
-            view["fee_paid_base"] = cb.fee_paid_base
-            view["fee_paid_usd"] = format_usd(cb.fee_paid_base)
-            view["distributable_base"] = cb.distributable_base
-            view["distributable_usd"] = format_usd(cb.distributable_base)
-            view["final_multiplier"] = implied_multiplier(totals, cb.winning_side, fee_bps)
+        if bet.status == "settled" and bet.winning_side is not None:
+            fee = bet.fee_paid_base or 0
+            distributable = totals[0] + totals[1] - fee
+            view["winning_side"] = bet.winning_side
+            view["fee_paid_base"] = fee
+            view["fee_paid_usd"] = format_usd(fee)
+            view["distributable_base"] = distributable
+            view["distributable_usd"] = format_usd(distributable)
+            view["final_multiplier"] = implied_multiplier(totals, bet.winning_side, fee_bps)
         if bet.status == "refunded":
             view["refund_reason"] = bet.refund_reason
         if bet.status == "failed":
@@ -406,45 +487,59 @@ class MarketService:
 
     async def participants(self, bet: Bet) -> dict:
         names = await self.repo.display_names(bet.id)
-        try:
-            positions = await self.chain.get_positions(bet.id) if bet.chain_bet_id else []
-        except ChainError as e:
-            if e.code != "NOT_FOUND":
-                raise
-            positions = []
+        rows: list[tuple[str, int, int]]
+        if bet.status in ("locked", "settled", "refunded"):
+            rows = [(x.wallet, x.side, x.amount_base) for x in await self.snapshots_for(bet)]
+        else:
+            try:
+                positions = await self.chain.get_positions(bet.id) if bet.chain_bet_id else []
+            except ChainError as e:
+                if e.code != "NOT_FOUND":
+                    raise
+                positions = []
+            rows = [(p.wallet, p.side, p.amount_base) for p in positions]
         return {
             "ok": True,
             "bet_id": bet.id,
             "participants": [
                 {
-                    "wallet": p.wallet, "side": p.side, "stake_base": p.amount_base,
-                    "stake_usd": format_usd(p.amount_base), "display_name": names.get(p.wallet),
+                    "wallet": w, "side": side, "stake_base": amount,
+                    "stake_usd": format_usd(amount), "display_name": names.get(w),
                 }
-                for p in positions
+                for w, side, amount in rows
             ],
         }
 
     async def position(self, bet: Bet, wallet: str) -> dict:
         if not is_valid_wallet(wallet):
             raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
-        cb = await self._chain_view(bet)
-        positions = await self.chain.get_positions(bet.id) if cb else []
-        mine = next((p for p in positions if p.wallet == wallet), None)
         names = await self.repo.display_names(bet.id)
         out = {"ok": True, "bet_id": bet.id, "status": bet.status, "wallet": wallet,
-               "display_name": names.get(wallet), "has_position": mine is not None, "side": None,
+               "display_name": names.get(wallet), "has_position": False, "side": None,
                "stake_base": None, "stake_usd": None, "payout_base": None, "payout_usd": None, "paid": False}
+        if bet.status not in ("locked", "settled", "refunded"):
+            cb = await self._chain_view(bet)
+            positions = await self.chain.get_positions(bet.id) if cb else []
+            mine = next((p for p in positions if p.wallet == wallet), None)
+            if mine is not None:
+                out.update(has_position=True, side=mine.side, stake_base=mine.amount_base, stake_usd=format_usd(mine.amount_base))
+            return out
+        snaps = await self.snapshots_for(bet)  # the chain position may be gone (claimed or closed): the snapshot stays
+        mine = next((x for x in snaps if x.wallet == wallet), None)
         if mine is None:
             return out
-        out.update(side=mine.side, stake_base=mine.amount_base, stake_usd=format_usd(mine.amount_base), paid=mine.claimed)
+        out.update(has_position=True, side=mine.side, stake_base=mine.amount_base, stake_usd=format_usd(mine.amount_base),
+                   paid=mine.status in ("paid", "refunded"))
         payout: int | None = None
-        if cb.state == "refunded":
+        if bet.status == "refunded":
             payout = mine.amount_base
-        elif cb.state == "settled":
-            if mine.claimed:
+        elif bet.status == "settled":
+            if mine.payout_base is not None:
                 payout = mine.payout_base
-            elif mine.side == cb.winning_side:
-                payout = compute_payout(mine.amount_base, cb.distributable_base, cb.side_totals[cb.winning_side])
+            elif mine.side == bet.winning_side:
+                totals = self._totals(snaps)
+                fee = bet.fee_paid_base or 0
+                payout = compute_payout(mine.amount_base, totals[0] + totals[1] - fee, totals[bet.winning_side])
             else:
                 payout = 0
         if payout is not None:
@@ -527,6 +622,7 @@ class MarketService:
     async def admin_view(self, bet: Bet) -> dict:
         cb = await self._chain_view(bet)
         positions = await self.chain.get_positions(bet.id) if cb else []
+        snapshots = await self.repo.snapshots(bet.id)
         row = {k: (_iso(v) if isinstance(v, datetime) else v) for k, v in bet.__dict__.items()}
         row["proposer_handle"] = mask_handle(bet.proposer_handle)
         return {
@@ -534,6 +630,7 @@ class MarketService:
             "bet": row,
             "chain": None if cb is None else {**cb.__dict__, "side_totals": list(cb.side_totals)},
             "positions": [p.__dict__ for p in positions],
+            "snapshots": [x.__dict__ for x in snapshots],
             "notices": await self.repo.list_notices(bet.id),
             "payout_tasks": [t.__dict__ for t in await self.repo.payout_tasks(bet.id)],
             "link": self.signer.url(bet.id),

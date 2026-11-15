@@ -1,4 +1,4 @@
-# Handshake Bets backend (chunks 1-5: skeleton, extraction, game lookup, pool markets, lifecycle worker)
+# Handshake Bets backend (chunks 1-5 and 3A: skeleton, extraction, game lookup, pool markets, lifecycle worker, real chain)
 
 FastAPI service that receives iMessage DMs from the gateway (`../src`, contract in `../docs/imessage-gateway.md`),
 dedups them in Postgres, looks the sender up in a demo roster, and replies through the gateway's `POST /send`.
@@ -38,7 +38,7 @@ The backend reads the repo-root `.env`, shared with the gateway (see the root `.
 Startup fails with a message naming every missing required variable.
 
 ## Database
-Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` in order in the
+Direct Postgres via psycopg 3 (all queries in `app/repository.py`). Apply `migrations/*.sql` (through `0007_snapshots`) in order in the
 Supabase SQL editor (or via the Supabase MCP): `0001_init` (inbound_messages, roster), `0002_drafts`
 (one bet request draft per sender handle) `0003_drafts_game_only` (status `collecting|ready`, pending
 field `team|date`) and `0004_games_and_bets` (draft candidates for confirmation, `sim_games`, `bets`). All tables have RLS enabled with no policies, so the
@@ -168,7 +168,7 @@ truth. The backend never holds user funds or keys: deposits come from the user's
 (required), `DEPOSIT_PAGE_ORIGIN` (CORS; default origin of the URL), `MIN_STAKE_USD=1`, `MAX_STAKE_USD=20`,
 `MAX_PARTICIPANTS=20`, `FEE_BPS=500` (above 1000 fails at startup), `TREASURY_PUBKEY` (mock falls back to a
 fake constant), `LINK_GRACE_HOURS=2`, `FUNDING_MINUTES_BEFORE_KICKOFF=60`, `SETTLE_HOURS_AFTER_KICKOFF=6`
-(stored for chunk 5), `CHAIN_MODE=mock` (`real` fails with a clear message for now). Fee, treasury, limits and
+(stored for chunk 5), `CHAIN_MODE=mock` or `real` (see "Real chain" below). Fee, treasury, limits and
 times are copied onto the bet at creation, so config changes never touch an open market.
 
 **State machine** (lowercase in DB and API): `game_confirmed -> open -> locked -> settled`, or
@@ -276,13 +276,55 @@ fixed apology meanwhile.
 tie; `/finish` is the older alias), `POST /admin/games/{id}/status` `{status: scheduled|in_progress|postponed|
 cancelled}` (simulated). `GET /admin/bets/{id}` now lists the payout tasks.
 
-**Handoff notes for the real chain client.**
-- The real contract needs a way to close loser positions on a settled market so their rent is reclaimed (a claim
-  with zero payout, or a close instruction). The mock has no loser claim, so losers get no task today.
-- The worker watches real deposits only through `maybe_close_when_full` and `chain.get_bet`, every tick for every
-  open bet. `RealChainClient` must keep those cheap (cache, or an account read, not a full scan).
-- If a kickoff time changes after a market opens, `funding_closes_at` and `settle_after` are not recomputed.
-- The worker is the only caller of `claim`; a real claim should return its transaction signature as `tx_ref`.
+## Real chain (chunk 3A)
+
+`CHAIN_MODE=real` makes the factory return `RealChainClient` (`markets/real_chain.py`): the `ChainClient` interface over
+HTTP to **chain-service** (`../chain-service`), which holds the payer and oracle keys and talks to the `handshake_pool`
+program on devnet. The backend never holds a key. Env: `CHAIN_SERVICE_URL`, `CHAIN_SERVICE_SECRET` (both required in real
+mode), `TREASURY_PUBKEY` (required; must equal the chain service's, which rejects bets with another treasury),
+`CONTRACT_REFUND_BUFFER_HOURS` (default 12), `PAYER_MIN_SOL_ALERT` (default 0.3), `CHAIN_HEALTH_EVERY_TICKS` (default 4).
+
+- **Client rules.** Service codes map to `ChainError` codes (the old ones plus `FUNDING_CLOSED`, `PAST_REFUND_DEADLINE`,
+  `REFUND_TOO_EARLY`, `BOTH_SIDES_REQUIRED`, `UNTRUSTED_BET`, `INVALID_PARAMS`, `RPC_ERROR`). Every service call is idempotent, so
+  transport errors, timeouts, 429, 5xx and `RPC_ERROR` are retried (0.5, 1, 2 s); business errors are final. A claim whose
+  position is gone raises `ALREADY_CLAIMED`, which the worker treats as done.
+- **Interface additions.** `close_loser_position(bet_id, wallet)`, `close_bet(bet_id)`, `health()`. `BetParams` now carries
+  `funding_closes_at` and `refund_after`; `open_market` sets `refund_after = settle_after + CONTRACT_REFUND_BUFFER_HOURS`.
+  After `refund_after` the oracle cannot lock or settle any more (anyone can refund on chain), so a late `close_funding` or
+  `settle_market` refunds everyone with reason `no_result` instead.
+- **Mock parity** (`markets/mock_chain.py`, see `contracts/README.md` for the full list): lock needs both sides and 2
+  participants; deposits stop at `funding_closes_at` in the contract's error order; lock and settle stop at `refund_after`;
+  claiming closes the position (a second claim, or a claim for a wallet with no position, is `ALREADY_CLAIMED`); losing positions
+  stay until `close_loser_position` (no transfer); `get_positions` lists open positions only; `close_bet` sweeps the dust and
+  makes later reads `NOT_FOUND`; `emergency_refund` (anyone at or after `refund_after`) exists on the mock for tests.
+  `tests/test_chain_parity.py` runs the same scenarios against the mock and against `RealChainClient` over a fake chain service
+  (`tests/fake_chain_service.py`); `tests/test_real_chain.py` covers mapping and retries.
+- **Snapshots** (migration `0007_snapshots.sql`, apply like the earlier ones; re-runnable, RLS on, no policies). On chain a
+  position disappears when it is claimed or closed, so `position_snapshots(bet_id, wallet, side, amount_base, payout_base,
+  status held|paid|refunded|closed_loser)` is filled from `chain.get_positions` when funding closes (inside `close_funding`,
+  before and right after the lock or refund), in `refund_market`, and by the worker's reconcile pass if a locked market has none.
+  Task completion updates `payout_base` and `status`. Views (`/markets/{token}`, `/participants`, `/position`) of locked, settled
+  and refunded markets read the snapshots and the `bets` row, not the chain. Open markets still read the chain. Display names
+  stay in `bet_participants`.
+- **Worker additions.** After settle, every losing position gets a `close_loser` task (kind added by 0007): retried like a
+  claim, no text on failure, and it does not block `payouts_completed_at` (only `win` and `refund` tasks do). Once the link has
+  expired and no task is pending the worker calls `close_bet` once (vault and bet rent back to the payer), recorded in
+  `bets.chain_closed_at`, failures logged and retried with backoff (60 s doubling, max 6 h). Every `CHAIN_HEALTH_EVERY_TICKS`
+  ticks the worker reads the chain service balances; a payer below `PAYER_MIN_SOL_ALERT` logs `worker.payer_sol_low` at error
+  level and shows in `GET /admin/worker/status` under `chain_health`.
+- **Live check** (devnet): start `chain-service`, start this backend with `CHAIN_MODE=real` and short timings
+  (`FUNDING_MINUTES_BEFORE_KICKOFF=3`, `SETTLE_HOURS_AFTER_KICKOFF=1`, `CONTRACT_REFUND_BUFFER_HOURS=1`, `LINK_GRACE_MINUTES=1`,
+  `WORKER_TICK_SECONDS=10`), then `.venv/bin/python scripts/live_check.py --chain-log <chain service log> [--only settled]`.
+  It drives a settled, a one sided and a cancelled market through the DM flow, `dev_deposit` and the worker. It sends real
+  texts to the roster entry `nicolas`.
+- **Deposits** come from the deposit page in chunk 3B (user signs, sponsor co-signs). Until then
+  `chain-service/scripts/dev_deposit.ts` makes them.
+
+**Other notes for the real client.**
+- The worker watches deposits through `maybe_close_when_full` and `chain.get_bet` on every tick for every open bet: those are
+  single account reads on chain.
+- If a kickoff time changes after a market opens, `funding_closes_at` and `settle_after` are not recomputed (and the chain
+  already has them).
 
 ## Endpoints
 - `POST /inbound` (`X-Gateway-Secret`): 401 bad secret, 400 bad payload, 200 duplicate (no-op), 200 accepted
@@ -292,7 +334,7 @@ cancelled}` (simulated). `GET /admin/bets/{id}` now lists the payout tasks.
 
 ## Tests
 ```sh
-.venv/bin/pytest -q
+.venv/bin/pytest -q            # 425 tests with the mock chain (and the fake chain service)
 ```
 Uses `TEST_DATABASE_URL` if set, otherwise spins up a throwaway local Postgres (needs `initdb`/`pg_ctl`,
 e.g. Homebrew `postgresql`). Each test uses its own schema. The gateway and Anthropic are mocked. Never touches

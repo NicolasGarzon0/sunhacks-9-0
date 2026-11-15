@@ -159,7 +159,7 @@ def create_app(
     def get_market() -> MarketService:
         if app.state.market is None:
             app.state.market = MarketService(
-                app.state.repo, build_chain_client(settings, app.state.repo.pool),
+                app.state.repo, build_chain_client(settings, app.state.repo.pool, now=now),
                 LinkSigner(settings.link_signing_secret, settings.deposit_page_url, settings.link_grace),
                 app.state.gateway, logger, settings, provider=app.state.provider, now=now,
             )

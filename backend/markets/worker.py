@@ -3,7 +3,10 @@
   a) reconcile   the bets table with the chain (repairs a crash between a chain call and its database write)
   b) funding     refund cancelled or postponed games, close funding at the deadline, close early when full
   c) results     read the game result, confirm a final with two matching reads, settle or refund
-  e) payouts     one claim per wallet owed money, with retries; payouts_completed_at when every task is done
+  e) payouts     one claim per wallet owed money (and one close_loser per losing position, which only returns rent),
+                 with retries; payouts_completed_at when every claim task is done
+  g) close       after the link expired and no task is pending, close_bet once to reclaim the vault and bet rent
+  h) health      every few ticks read the chain service balances and flag a low payer SOL balance
   f) notices     send queued proposer texts, retrying transient failures
 
 (Step d, settlement itself, is MarketService.settle_market.) Every step is conditional on the current status,
@@ -27,6 +30,9 @@ from .service import MarketError, MarketService
 LOCK_KEY = 0x4842_5F57_4B52  # "HB_WKR": one worker loop across all app instances
 PAYOUT_CONCURRENCY = 3
 PERMANENT_CLAIM_CODES = {"NOT_A_WINNER", "NOT_FOUND", "INVALID_WALLET"}
+PERMANENT_CLOSE_CODES = {"WRONG_STATE", "INVALID_WALLET", "UNTRUSTED_BET"}
+CLOSE_BET_BACKOFF_S = 60
+CLOSE_BET_BACKOFF_MAX_S = 6 * 3600
 
 
 class Worker:
@@ -42,6 +48,8 @@ class Worker:
         self.repo, self.market, self.provider, self.settings, self.logger = repo, market, provider, settings, logger
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.last_tick: dict | None = None
+        self.chain_health: dict | None = None
+        self._tick_n = 0
         self._ticking = asyncio.Lock()  # one tick at a time inside this process
 
     # --- loop ---
@@ -83,10 +91,15 @@ class Worker:
         def bump(name: str, n: int = 1) -> None:
             counts[name] = counts.get(name, 0) + n
 
-        for name, step in (
+        self._tick_n += 1
+        steps = [
             ("reconcile", self._reconcile), ("funding", self._funding), ("results", self._results),
-            ("payouts", self._payouts), ("notices", self._notices),
-        ):
+            ("payouts", self._payouts), ("close", self._close_chain_bets),
+        ]
+        if (self._tick_n - 1) % self.settings.chain_health_every_ticks == 0:
+            steps.append(("health", self._health))
+        steps.append(("notices", self._notices))
+        for name, step in steps:
             try:
                 await step(bump)
             except Exception as e:  # one failing step must not starve the others
@@ -120,6 +133,8 @@ class Worker:
                     await self.market.refund_market(bet.id, reason)
                     bump("repaired")
             elif bet.status == "locked":
+                if await self.market.take_snapshot_if_missing(bet):
+                    bump("snapshots_taken")
                 if cb.state == "settled" and cb.winning_side is not None:
                     await self.market.settle_market(bet.id, cb.winning_side)
                     bump("repaired")
@@ -224,7 +239,10 @@ class Worker:
         async def run(task: PayoutTask) -> None:
             async with sem:
                 try:
-                    await self._claim(task, bump)
+                    if task.kind == "close_loser":
+                        await self._close_loser(task, bump)
+                    else:
+                        await self._claim(task, bump)
                 except Exception as e:
                     bump("payout_errors")
                     self.logger.error("worker.payout_failed", taskId=task.id, detail=err_detail(e))
@@ -243,10 +261,8 @@ class Worker:
         try:
             claim = await self.market.chain.claim(task.bet_id, task.wallet)
         except ChainError as e:
-            if e.code == "ALREADY_CLAIMED":
-                positions = await self.market.chain.get_positions(task.bet_id)
-                mine = next((p for p in positions if p.wallet == task.wallet), None)
-                await self.repo.task_done(task.id, mine.payout_base if mine else task.amount_base, None, now)
+            if e.code == "ALREADY_CLAIMED":  # the position is gone: someone already paid it (or we did, then crashed)
+                await self.repo.task_done(task.id, task.amount_base, None, now)
                 bump("claims_done")
                 return
             await self._claim_failed(task, e.code, e.code in PERMANENT_CLAIM_CODES, bump)
@@ -257,21 +273,89 @@ class Worker:
         await self.repo.task_done(task.id, claim.payout_base, claim.tx_ref, now)
         bump("claims_done")
 
-    async def _claim_failed(self, task: PayoutTask, error: str, permanent: bool, bump) -> None:
+    async def _close_loser(self, task: PayoutTask, bump) -> None:
+        """Close a losing position: the rent goes back to the payer, no tokens move. Retried like a claim."""
+        now = self.now()
+        try:
+            await self.market.chain.close_loser_position(task.bet_id, task.wallet)
+        except ChainError as e:
+            if e.code == "NOT_FOUND":  # the Bet account is gone, so the position is too
+                await self.repo.task_done(task.id, 0, None, now)
+                bump("closes_done")
+                return
+            await self._claim_failed(task, e.code, e.code in PERMANENT_CLOSE_CODES, bump, notify=False)
+            return
+        except Exception as e:
+            await self._claim_failed(task, type(e).__name__, False, bump, notify=False)
+            return
+        await self.repo.task_done(task.id, 0, None, now)
+        bump("closes_done")
+
+    async def _claim_failed(self, task: PayoutTask, error: str, permanent: bool, bump, notify: bool = True) -> None:
         now = self.now()
         attempts = task.attempts + 1
         if permanent or attempts >= self.settings.claim_max_attempts:
             await self.repo.task_failed(task.id, error, now)
-            self.logger.error("worker.claim_gave_up", taskId=task.id, betId=task.bet_id, attempts=attempts, error=error)
-            bump("claims_failed")
+            self.logger.error("worker.claim_gave_up", taskId=task.id, betId=task.bet_id, kind=task.kind, attempts=attempts, error=error)
+            bump("claims_failed" if notify else "closes_failed")
             bet = await self.repo.get_bet(task.bet_id)
-            if bet is not None:
+            if notify and bet is not None:
                 await self.market.queue_notice(bet, "payouts_delayed")  # primary key (bet_id, kind): sent once
             return
         delay = self.settings.claim_backoff_seconds * 2 ** (attempts - 1)
         await self.repo.task_retry_later(task.id, error, now + timedelta(seconds=delay), now)
         self.logger.warn("worker.claim_retry", taskId=task.id, attempts=attempts, error=error, delaySeconds=delay)
         bump("claims_retried")
+
+    # --- g) close_bet (reclaim the vault and bet rent) ---
+
+    async def _close_chain_bets(self, bump) -> None:
+        now = self.now()
+
+        async def one(bet: Bet) -> None:
+            expires = self.market.signer.expires_at(bet)
+            if expires is None or now < expires:
+                return  # the link may still be open: keep the positions viewable
+            if await self.repo.pending_task_count(bet.id) > 0:
+                return  # a claim or a loser close is still pending
+            try:
+                await self.market.chain.close_bet(bet.id)
+            except Exception as e:
+                code = e.code if isinstance(e, ChainError) else type(e).__name__
+                attempts = bet.close_bet_attempts + 1
+                delay = min(CLOSE_BET_BACKOFF_S * 2 ** (attempts - 1), CLOSE_BET_BACKOFF_MAX_S)
+                await self.repo.close_bet_failed(bet.id, code, now + timedelta(seconds=delay))
+                self.logger.error("worker.close_bet_failed", betId=bet.id, attempts=attempts, error=code, delaySeconds=delay)
+                bump("close_failed")
+                return
+            await self.repo.mark_chain_closed(bet.id, now)
+            self.logger.info("worker.bet_closed", betId=bet.id)
+            bump("closed_bets")
+
+        await self._each(await self.repo.bets_to_close(now), one, bump, "close")
+
+    # --- h) chain health ---
+
+    async def _health(self, bump) -> None:
+        now = self.now()
+        try:
+            h = await self.market.chain.health()
+        except Exception as e:
+            self.chain_health = {"checked_at": now.isoformat(), "ok": False, "error": e.code if isinstance(e, ChainError) else type(e).__name__}
+            self.logger.warn("worker.chain_health_failed", detail=err_detail(e))
+            bump("health_errors")
+            return
+        if h is None:
+            return
+        payer = h.get("payer_sol")
+        low = payer is not None and payer < self.settings.payer_min_sol_alert
+        self.chain_health = {
+            "checked_at": now.isoformat(), "ok": True, "payer_sol": payer, "oracle_sol": h.get("oracle_sol"),
+            "payer_sol_low": low, "payer_min_sol_alert": self.settings.payer_min_sol_alert,
+        }
+        if low:
+            self.logger.error("worker.payer_sol_low", payerSol=payer, threshold=self.settings.payer_min_sol_alert)
+            bump("payer_sol_low")
 
     # --- f) notices ---
 
@@ -290,7 +374,10 @@ class Worker:
 
     async def status(self) -> dict:
         counts = await self.repo.worker_counts()
-        return {"ok": True, "enabled": self.settings.worker_enabled, "last_tick": self.last_tick, **counts}
+        return {
+            "ok": True, "enabled": self.settings.worker_enabled, "last_tick": self.last_tick,
+            "chain_health": self.chain_health, **counts,
+        }
 
 
 __all__ = ["Worker", "MarketError"]

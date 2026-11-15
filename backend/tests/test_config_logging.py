@@ -123,7 +123,7 @@ def test_market_overrides_and_dollar_conversion():
         ({"DEPOSIT_PAGE_ORIGIN": "https://x.test/path"}, "DEPOSIT_PAGE_ORIGIN"),
         ({"CHAIN_MODE": "maybe"}, "CHAIN_MODE"),
         ({"CHAIN_MODE": "real"}, "TREASURY_PUBKEY"),
-        ({"CHAIN_MODE": "real", "TREASURY_PUBKEY": "x"}, "not implemented"),
+        ({"CHAIN_MODE": "real", "TREASURY_PUBKEY": "x"}, "CHAIN_SERVICE_URL, CHAIN_SERVICE_SECRET"),
     ],
 )
 def test_market_config_errors_are_clear(override, message):

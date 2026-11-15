@@ -55,6 +55,7 @@ async def test_deposit_error_codes(mock, bet_id):
     assert await code_of(mock.get_bet(str(uuid.uuid4()))) == "NOT_FOUND"
     await mock.deposit(bet_id, w(1), 0, 5 * USDC)
     assert await code_of(mock.deposit(bet_id, w(1), 1, 5 * USDC)) == "ALREADY_OTHER_SIDE"
+    await mock.deposit(bet_id, w(9), 1, 5 * USDC)  # lock now needs both sides and 2 wallets (contract parity)
     await mock.lock(bet_id)
     assert await code_of(mock.deposit(bet_id, w(2), 0, USDC)) == "MARKET_NOT_OPEN"
 
@@ -113,7 +114,9 @@ async def test_lock_settle_claim_leaves_only_dust_and_treasury_gets_the_fee(mock
     done = await mock.get_bet(bet_id)
     assert done.vault_base == 67_500_000 - c3.payout_base - c4.payout_base == 1  # one base unit of dust
     assert done.treasury_balance_base == done.fee_paid_base == 1_500_000
-    assert all(p.closed and p.claimed for p in await mock.get_positions(bet_id) if p.wallet in (w(3), w(4)))
+    # claimed positions are gone like on chain; only the losers' positions are still open
+    assert {p.wallet for p in await mock.get_positions(bet_id)} == {w(1), w(2)}
+    assert done.positions_open == 2
 
 
 async def test_double_claim_and_loser_claim(mock, bet_id):
@@ -121,7 +124,8 @@ async def test_double_claim_and_loser_claim(mock, bet_id):
     await mock.lock(bet_id)
     await mock.settle(bet_id, 0)  # side 0 wins: fee = 5% of 39 = 1.95
     assert await code_of(mock.claim(bet_id, w(3))) == "NOT_A_WINNER"
-    assert await code_of(mock.claim(bet_id, w(9))) == "NOT_FOUND"
+    # a wallet that never held a position looks exactly like a claimed one on chain (no account): ALREADY_CLAIMED
+    assert await code_of(mock.claim(bet_id, w(9))) == "ALREADY_CLAIMED"
     assert await code_of(mock.claim(bet_id, "bad")) == "INVALID_WALLET"
     first = await mock.claim(bet_id, w(1))
     assert first.payout_base == 22_350_000  # 10 of 30 over 67.05
@@ -132,9 +136,10 @@ async def test_double_claim_and_loser_claim(mock, bet_id):
 async def test_settle_rules(mock, bet_id):
     assert await code_of(mock.settle(bet_id, 0)) == "WRONG_STATE"  # must lock first
     await mock.deposit(bet_id, w(1), 0, 5 * USDC)
+    assert await code_of(mock.lock(bet_id)) == "BOTH_SIDES_REQUIRED"  # one sided: refund_all is the only way out
+    await mock.deposit(bet_id, w(2), 1, 5 * USDC)
     await mock.lock(bet_id)
     assert await code_of(mock.settle(bet_id, 2)) == "INVALID_SIDE"
-    assert await code_of(mock.settle(bet_id, 1)) == "WRONG_STATE"  # winning side holds no money: refund instead
 
 
 async def test_refund_path_has_no_fee_and_returns_stakes(mock, bet_id):
@@ -168,5 +173,7 @@ async def test_factory(repo, settings):
     from dataclasses import replace
 
     assert isinstance(build_chain_client(settings, repo.pool), MockChainClient)
-    with pytest.raises(NotImplementedError, match="CHAIN_MODE=real"):
-        build_chain_client(replace(settings, chain_mode="real"), repo.pool)
+    from markets.real_chain import RealChainClient
+
+    real = build_chain_client(replace(settings, chain_mode="real", chain_service_url="http://chain.test", chain_service_secret="s"), repo.pool)
+    assert isinstance(real, RealChainClient) and real.mode == "real"

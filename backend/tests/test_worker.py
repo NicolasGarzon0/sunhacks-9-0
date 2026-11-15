@@ -110,8 +110,9 @@ async def test_tick_summary_and_status_endpoint(worker, client, market, provider
     scripted.final(bet.game_id, 24, 17)
     summary = await worker.tick()
     assert summary["settled"] == 1 and summary["claims_done"] == 2 and summary["completed"] == 1
+    assert summary["closes_done"] == 1  # the loser's position is closed too
     status = await worker.status()
-    assert status["bets"] == {"settled": 1} and status["payout_tasks"] == {"done": 2} and status["last_tick"]["settled"] == 1
+    assert status["bets"] == {"settled": 1} and status["payout_tasks"] == {"done": 3} and status["last_tick"]["settled"] == 1
 
 
 # --- result polling and confirmation ---
@@ -212,7 +213,7 @@ async def test_side_0_is_the_away_team(worker, market, provider, scripted, repo,
     scripted.final(bet.game_id, 10, 31)  # away wins
     await worker.tick()
     done = await repo.get_bet(bet.id)
-    assert done.winning_side == 0 and {t.wallet for t in await repo.payout_tasks(bet.id)} == {w(1)}
+    assert done.winning_side == 0 and {t.wallet for t in await repo.payout_tasks(bet.id) if t.kind == "win"} == {w(1)}
 
 
 # --- refunds ---
@@ -327,6 +328,8 @@ async def test_lock_on_the_chain_without_the_db_write_is_repaired(worker, market
 
 
 async def test_one_failing_bet_does_not_stop_the_others(worker, market, provider, scripted, repo, chain, clock, monkeypatch, logs):
+    # the two games are about a day apart; a long refund buffer keeps the earlier one inside its refund deadline
+    object.__setattr__(market.settings, "contract_refund_buffer_hours", 48)
     a = await locked_market(market, provider, repo, chain)
     [g2] = await provider.find_candidates("steelers", None, None)
     await market.open_market("+15550002222", g2)

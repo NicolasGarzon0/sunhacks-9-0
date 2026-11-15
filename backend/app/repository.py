@@ -72,6 +72,11 @@ class Bet:
     final_confirmed_at: datetime | None = None
     last_polled_at: datetime | None = None
     provider_calls: int = 0
+    # chain parity (chunk 3A): closing the Bet account (reclaims the rent)
+    chain_closed_at: datetime | None = None
+    close_bet_attempts: int = 0
+    close_bet_next_attempt_at: datetime | None = None
+    close_bet_last_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,7 +84,7 @@ class PayoutTask:
     id: str
     bet_id: str
     wallet: str
-    kind: str  # win | refund
+    kind: str  # win | refund | close_loser
     amount_base: int
     status: str  # pending | done | failed
     attempts: int
@@ -88,6 +93,19 @@ class PayoutTask:
     tx_ref: str | None
 
 
+@dataclass(frozen=True)
+class Snapshot:
+    """A position as it stood when funding closed. Views read this, because on chain a claimed or closed position is gone."""
+
+    bet_id: str
+    wallet: str
+    side: int
+    amount_base: int
+    payout_base: int | None
+    status: str  # held | paid | refunded | closed_loser
+
+
+SNAPSHOT_COLUMNS = "bet_id::text as bet_id, wallet, side, amount_base, payout_base, status"
 TASK_COLUMNS = "id::text as id, bet_id::text as bet_id, wallet, kind, amount_base, status, attempts, next_attempt_at, last_error, tx_ref"
 
 
@@ -97,7 +115,7 @@ BET_COLUMNS = (
     "max_stake_base, max_participants, funding_closes_at, settle_after, opened_at, locked_at, settled_at, "
     "winning_side, total_pool_base, fee_paid_base, failure_reason, refund_reason, payouts_completed_at, "
     "result_away_score, result_home_score, result_winner_side, result_first_seen_at, final_confirmed_at, "
-    "last_polled_at, provider_calls"
+    "last_polled_at, provider_calls, chain_closed_at, close_bet_attempts, close_bet_next_attempt_at, close_bet_last_error"
 )
 ACTIVE_STATUSES = "('game_confirmed', 'open', 'locked')"  # the unique index predicate in migration 0005
 SIM_COLUMNS = (
@@ -465,11 +483,20 @@ class Repository:
 
     async def task_done(self, task_id: str, amount: int, tx_ref: str | None, at: datetime) -> None:
         async with self.pool.connection() as conn:
-            await conn.execute(
-                "update payout_tasks set status = 'done', amount_base = %s, tx_ref = %s, attempts = attempts + 1, "
-                "last_error = null, next_attempt_at = null, updated_at = %s where id = %s",
-                (amount, tx_ref, at, task_id),
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    "update payout_tasks set status = 'done', amount_base = %s, tx_ref = %s, attempts = attempts + 1, "
+                    "last_error = null, next_attempt_at = null, updated_at = %s where id = %s",
+                    (amount, tx_ref, at, task_id),
+                )
+                # keep the snapshot in step: win -> paid, refund -> refunded, close_loser -> closed_loser (payout 0)
+                await conn.execute(
+                    "update position_snapshots s set "
+                    "status = case t.kind when 'win' then 'paid' when 'refund' then 'refunded' else 'closed_loser' end, "
+                    "payout_base = case when t.kind = 'close_loser' then 0 else %s end, updated_at = %s "
+                    "from payout_tasks t where t.id = %s and s.bet_id = t.bet_id and s.wallet = t.wallet",
+                    (amount, at, task_id),
+                )
 
     async def task_retry_later(self, task_id: str, error: str, next_at: datetime, at: datetime) -> None:
         async with self.pool.connection() as conn:
@@ -497,9 +524,72 @@ class Repository:
     async def open_task_count(self, bet_id: str) -> int:
         async with self.pool.connection() as conn:
             row = await (await conn.execute(
+                "select count(*) from payout_tasks where bet_id = %s and status <> 'done' and kind <> 'close_loser'", (bet_id,)
+            )).fetchone()
+            return int(row[0])
+
+    async def pending_task_count(self, bet_id: str) -> int:
+        """Every task that is not done, of any kind (claims and loser closes). close_bet waits for all of them."""
+        async with self.pool.connection() as conn:
+            row = await (await conn.execute(
                 "select count(*) from payout_tasks where bet_id = %s and status <> 'done'", (bet_id,)
             )).fetchone()
             return int(row[0])
+
+    # position snapshots
+
+    async def upsert_snapshots(self, bet_id: str, rows: list[tuple[str, int, int]]) -> int:
+        """rows: (wallet, side, amount_base). Adds new positions and follows top ups while a position is still held;
+        a snapshot that already moved on (paid, refunded, closed_loser) is never touched."""
+        n = 0
+        async with self.pool.connection() as conn:
+            for wallet, side, amount in rows:
+                cur = await conn.execute(
+                    "insert into position_snapshots (bet_id, wallet, side, amount_base) values (%s, %s, %s, %s) "
+                    "on conflict (bet_id, wallet) do update set side = excluded.side, amount_base = excluded.amount_base, "
+                    "updated_at = now() where position_snapshots.status = 'held' "
+                    "and (position_snapshots.side, position_snapshots.amount_base) is distinct from (excluded.side, excluded.amount_base)",
+                    (bet_id, wallet, side, amount),
+                )
+                n += cur.rowcount
+        return n
+
+    async def snapshots(self, bet_id: str) -> list[Snapshot]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                f"select {SNAPSHOT_COLUMNS} from position_snapshots where bet_id = %s order by created_at, wallet", (bet_id,)
+            )
+            return [Snapshot(**r) for r in await cur.fetchall()]
+
+    # closing the Bet account (rent)
+
+    async def bets_to_close(self, now: datetime) -> list[Bet]:
+        """Settled or refunded markets with every claim done whose Bet account is still open on chain."""
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                f"select {BET_COLUMNS} from bets where status in ('settled', 'refunded') and payouts_completed_at is not null "
+                "and chain_closed_at is null and (close_bet_next_attempt_at is null or close_bet_next_attempt_at <= %s) "
+                "order by created_at",
+                (now,),
+            )
+            return [Bet(**r) for r in await cur.fetchall()]
+
+    async def mark_chain_closed(self, bet_id: str, at: datetime) -> bool:
+        return await self._transition(
+            "update bets set chain_closed_at = %s, close_bet_last_error = null, close_bet_next_attempt_at = null "
+            "where id = %s and chain_closed_at is null",
+            (at, bet_id),
+        )
+
+    async def close_bet_failed(self, bet_id: str, error: str, next_at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bets set close_bet_attempts = close_bet_attempts + 1, close_bet_last_error = %s, "
+                "close_bet_next_attempt_at = %s where id = %s",
+                (error[:200], next_at, bet_id),
+            )
 
     # provider budget
 
@@ -527,7 +617,11 @@ class Repository:
             tasks = dict(await (await conn.execute("select status, count(*) from payout_tasks group by status")).fetchall())
             notices = dict(await (await conn.execute("select status, count(*) from bet_notices group by status")).fetchall())
             perm = (await (await conn.execute("select count(*) from bet_notices where permanent_failure")).fetchone())[0]
-        return {"bets": bets, "payout_tasks": tasks, "notices": notices, "notices_permanent_failure": int(perm)}
+            closed = (await (await conn.execute("select count(*) from bets where chain_closed_at is not null")).fetchone())[0]
+        return {
+            "bets": bets, "payout_tasks": tasks, "notices": notices, "notices_permanent_failure": int(perm),
+            "chain_closed_bets": int(closed),
+        }
 
     # --- participants (display names) ---
 

@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 ERROR_CODES = (
     "BELOW_MIN", "ABOVE_MAX", "MARKET_FULL", "ALREADY_OTHER_SIDE", "MARKET_NOT_OPEN", "WRONG_STATE",
     "ALREADY_CLAIMED", "NOT_A_WINNER", "NOT_FOUND", "INVALID_WALLET", "INVALID_SIDE",
+    # chunk 3A: the contract and the chain service
+    "FUNDING_CLOSED", "PAST_REFUND_DEADLINE", "REFUND_TOO_EARLY", "BOTH_SIDES_REQUIRED", "UNTRUSTED_BET",
+    "INVALID_PARAMS", "RPC_ERROR",
 )
 STATES = ("open", "locked", "settled", "refunded")
 _BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")  # Solana style public key
@@ -37,6 +41,9 @@ class BetParams:
     min_stake_base: int
     max_stake_base: int
     max_participants: int
+    # contract timings (chunk 3A). None skips the time rules (older callers and tests).
+    funding_closes_at: datetime | None = None
+    refund_after: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,7 @@ class ChainBet:
     winning_side: int | None
     vault_base: int = 0
     treasury_balance_base: int = 0
+    positions_open: int = 0
 
     @property
     def total_pool_base(self) -> int:
@@ -88,15 +96,28 @@ class ChainClient(Protocol):
     async def lock(self, bet_id: str) -> ChainBet: ...
     async def settle(self, bet_id: str, winning_side: int) -> ChainBet: ...
     async def refund_all(self, bet_id: str) -> ChainBet: ...
-    async def claim(self, bet_id: str, wallet: str) -> Claim: ...
+    async def claim(self, bet_id: str, wallet: str) -> Claim:
+        """Raises ChainError("ALREADY_CLAIMED") when the position is already gone (claimed or closed)."""
+        ...
+
+    async def close_loser_position(self, bet_id: str, wallet: str) -> None:
+        """Settled markets only. Closes a losing position (rent back to the payer, no transfer). Idempotent."""
+        ...
+
+    async def close_bet(self, bet_id: str) -> None:
+        """Settled or refunded with every position closed. Sweeps dust, closes the accounts. Idempotent."""
+        ...
+
+    async def health(self) -> dict | None:
+        """Payer and oracle balances for the worker's SOL alert. None when the client has nothing to report."""
+        ...
 
 
-def build_chain_client(settings, pool) -> ChainClient:
+def build_chain_client(settings, pool, now=None, http_client=None) -> ChainClient:
     if settings.chain_mode == "mock":
         from .mock_chain import MockChainClient
 
-        return MockChainClient(pool)
-    raise NotImplementedError(
-        "CHAIN_MODE=real is not implemented yet: the real client (Solana program calls) arrives with the deposit page. "
-        "Use CHAIN_MODE=mock."
-    )
+        return MockChainClient(pool, now=now)
+    from .real_chain import RealChainClient
+
+    return RealChainClient(settings.chain_service_url, settings.chain_service_secret, client=http_client)

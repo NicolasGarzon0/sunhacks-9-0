@@ -73,6 +73,12 @@ class Settings:
     claim_max_attempts: int = 8
     claim_backoff_seconds: int = 30
     notice_max_attempts: int = 6
+    # real chain (chunk 3A): the backend talks to chain-service, which holds the payer and oracle keys
+    chain_service_url: str = ""
+    chain_service_secret: str = ""
+    contract_refund_buffer_hours: int = 12
+    payer_min_sol_alert: float = 0.3
+    chain_health_every_ticks: int = 4
 
     @property
     def link_grace(self) -> timedelta:
@@ -86,6 +92,18 @@ class Settings:
             f"haiku_model={self.haiku_model!r}, local_timezone={self.local_timezone!r}, "
             f"game_provider={self.game_provider!r}, chain_mode={self.chain_mode!r})"
         )
+
+
+def _float(raw: str | None, default: float, name: str) -> float:
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number") from None
+    if value < 0:
+        raise ConfigError(f"{name} must be at least 0")
+    return value
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -190,7 +208,11 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
     if chain_mode == "real":
         if treasury is None:
             raise ConfigError("Missing required environment variable(s): TREASURY_PUBKEY (needed when CHAIN_MODE=real)")
-        raise ConfigError("CHAIN_MODE=real is not implemented yet. Use CHAIN_MODE=mock.")
+        missing_real = [n for n in ("CHAIN_SERVICE_URL", "CHAIN_SERVICE_SECRET") if get(n) is None]
+        if missing_real:
+            raise ConfigError(
+                "Missing required environment variable(s): " + ", ".join(missing_real) + " (needed when CHAIN_MODE=real)"
+            )
     treasury = treasury or MOCK_TREASURY
 
     secret = get("LINK_SIGNING_SECRET")
@@ -264,5 +286,10 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         sports_call_budget_monthly=integer("SPORTS_CALL_BUDGET_MONTHLY", 100, 0),
         claim_max_attempts=integer("CLAIM_MAX_ATTEMPTS", 8, 1),
         claim_backoff_seconds=integer("CLAIM_BACKOFF_SECONDS", 30, 0),
+        chain_service_url=(get("CHAIN_SERVICE_URL") or "").rstrip("/"),
+        chain_service_secret=get("CHAIN_SERVICE_SECRET") or "",
+        contract_refund_buffer_hours=integer("CONTRACT_REFUND_BUFFER_HOURS", 12, 1),
+        payer_min_sol_alert=_float(get("PAYER_MIN_SOL_ALERT"), 0.3, "PAYER_MIN_SOL_ALERT"),
+        chain_health_every_ticks=integer("CHAIN_HEALTH_EVERY_TICKS", 4, 1),
         notice_max_attempts=integer("NOTICE_MAX_ATTEMPTS", 6, 1),
     )

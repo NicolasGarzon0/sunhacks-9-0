@@ -1,0 +1,1392 @@
+{
+  "address": "38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE",
+  "metadata": {
+    "name": "handshake_pool",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Shared pool bet escrow for Handshake Bets"
+  },
+  "instructions": [
+    {
+      "name": "claim",
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Anyone. The app signs and pays the transaction fee on behalf of the winner."
+          ],
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_token",
+          "writable": true
+        },
+        {
+          "name": "rent_receiver",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_bet",
+      "discriminator": [
+        185,
+        206,
+        13,
+        184,
+        176,
+        108,
+        140,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "bet"
+          ]
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "relations": [
+            "bet"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "treasury_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_loser_position",
+      "discriminator": [
+        23,
+        141,
+        14,
+        73,
+        38,
+        118,
+        194,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Anyone."
+          ],
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_receiver",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_bet",
+      "discriminator": [
+        197,
+        42,
+        153,
+        2,
+        59,
+        63,
+        143,
+        246
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Sponsor: pays rent for the Bet and the Vault and is stored as bet.payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "bet_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Classic SPL Token only: Token-2022 extensions (transfer fees, hooks) would break the accounting."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "bet_id",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "min_stake",
+          "type": "u64"
+        },
+        {
+          "name": "max_stake",
+          "type": "u64"
+        },
+        {
+          "name": "max_participants",
+          "type": "u16"
+        },
+        {
+          "name": "funding_closes_at",
+          "type": "i64"
+        },
+        {
+          "name": "refund_after",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "deposit",
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "docs": [
+            "The user. Signs and authorizes the token transfer."
+          ],
+          "signer": true
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "The sponsor. Second signer: pays Position rent and must be bet.payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              },
+              {
+                "kind": "account",
+                "path": "depositor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "depositor_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "emergency_refund",
+      "discriminator": [
+        188,
+        73,
+        52,
+        195,
+        137,
+        70,
+        180,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Anyone. Needs no authority: this is the exit when the oracle never settles."
+          ],
+          "signer": true
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "lock",
+      "discriminator": [
+        21,
+        19,
+        208,
+        43,
+        237,
+        62,
+        255,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "bet"
+          ]
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "refund_all",
+      "discriminator": [
+        174,
+        87,
+        222,
+        126,
+        23,
+        59,
+        189,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "bet"
+          ]
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle",
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "bet"
+          ]
+        },
+        {
+          "name": "bet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet.bet_id",
+                "account": "Bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "bet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "treasury_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "winning_side",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Bet",
+      "discriminator": [
+        147,
+        23,
+        35,
+        59,
+        15,
+        75,
+        155,
+        32
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BetClosed",
+      "discriminator": [
+        122,
+        20,
+        157,
+        254,
+        221,
+        0,
+        39,
+        129
+      ]
+    },
+    {
+      "name": "BetLocked",
+      "discriminator": [
+        230,
+        84,
+        251,
+        66,
+        85,
+        174,
+        217,
+        15
+      ]
+    },
+    {
+      "name": "BetRefunded",
+      "discriminator": [
+        32,
+        234,
+        173,
+        102,
+        106,
+        4,
+        2,
+        203
+      ]
+    },
+    {
+      "name": "BetSettled",
+      "discriminator": [
+        57,
+        145,
+        224,
+        160,
+        62,
+        119,
+        227,
+        206
+      ]
+    },
+    {
+      "name": "Claimed",
+      "discriminator": [
+        217,
+        192,
+        123,
+        72,
+        108,
+        150,
+        248,
+        33
+      ]
+    },
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "EmergencyRefunded",
+      "discriminator": [
+        194,
+        30,
+        0,
+        61,
+        84,
+        46,
+        236,
+        163
+      ]
+    },
+    {
+      "name": "LoserClosed",
+      "discriminator": [
+        154,
+        98,
+        74,
+        231,
+        16,
+        235,
+        145,
+        7
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "BelowMin",
+      "msg": "Deposit is below the minimum stake"
+    },
+    {
+      "code": 6001,
+      "name": "AboveMax",
+      "msg": "Position would exceed the maximum stake"
+    },
+    {
+      "code": 6002,
+      "name": "MarketFull",
+      "msg": "The market has no room for another participant"
+    },
+    {
+      "code": 6003,
+      "name": "AlreadyOtherSide",
+      "msg": "This wallet already holds the other side"
+    },
+    {
+      "code": 6004,
+      "name": "MarketNotOpen",
+      "msg": "The market is not open"
+    },
+    {
+      "code": 6005,
+      "name": "WrongState",
+      "msg": "The market is in the wrong state for this instruction"
+    },
+    {
+      "code": 6006,
+      "name": "NotAWinner",
+      "msg": "This position is not on the winning side"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidSide",
+      "msg": "Side must be 0 or 1"
+    },
+    {
+      "code": 6008,
+      "name": "FundingClosed",
+      "msg": "Funding has closed"
+    },
+    {
+      "code": 6009,
+      "name": "BothSidesRequired",
+      "msg": "Both sides need money and at least 2 participants"
+    },
+    {
+      "code": 6010,
+      "name": "FeeTooHigh",
+      "msg": "Fee is above the 10% cap"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidParams",
+      "msg": "Invalid parameters"
+    },
+    {
+      "code": 6012,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6013,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6014,
+      "name": "WrongMint",
+      "msg": "Wrong mint"
+    },
+    {
+      "code": 6015,
+      "name": "WrongTreasury",
+      "msg": "Wrong treasury token account"
+    },
+    {
+      "code": 6016,
+      "name": "WrongDestination",
+      "msg": "Wrong destination token account"
+    },
+    {
+      "code": 6017,
+      "name": "WrongRentReceiver",
+      "msg": "Rent receiver must be the bet payer"
+    },
+    {
+      "code": 6018,
+      "name": "PositionsStillOpen",
+      "msg": "Positions are still open"
+    },
+    {
+      "code": 6019,
+      "name": "PastRefundDeadline",
+      "msg": "The refund deadline has passed: lock and settle are closed"
+    },
+    {
+      "code": 6020,
+      "name": "RefundTooEarly",
+      "msg": "The refund deadline has not been reached yet"
+    }
+  ],
+  "types": [
+    {
+      "name": "Bet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet_id",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "The oracle key: the only key that may lock, settle, refund and close the bet."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "The sponsor that paid rent. Receives all rent back."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Owner of the token account that must receive the fee."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_stake",
+            "type": "u64"
+          },
+          {
+            "name": "max_stake",
+            "type": "u64"
+          },
+          {
+            "name": "max_participants",
+            "type": "u16"
+          },
+          {
+            "name": "participant_count",
+            "type": "u16"
+          },
+          {
+            "name": "positions_open",
+            "type": "u16"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "BetState"
+              }
+            }
+          },
+          {
+            "name": "winning_side",
+            "type": "u8"
+          },
+          {
+            "name": "fee_paid",
+            "type": "u64"
+          },
+          {
+            "name": "distributable",
+            "type": "u64"
+          },
+          {
+            "name": "funding_closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "refund_after",
+            "docs": [
+              "From this time anyone may call emergency_refund, and lock / settle stop working."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "dust_to_treasury",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetLocked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          },
+          {
+            "name": "participant_count",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          },
+          {
+            "name": "participant_count",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_side",
+            "type": "u8"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "distributable",
+            "type": "u64"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Locked"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Refunded"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Claimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          },
+          {
+            "name": "refund",
+            "type": "bool"
+          },
+          {
+            "name": "positions_open",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "position_amount",
+            "type": "u64"
+          },
+          {
+            "name": "new_position",
+            "type": "bool"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          },
+          {
+            "name": "participant_count",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmergencyRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous_state",
+            "type": "u8"
+          },
+          {
+            "name": "side_totals",
+            "type": {
+              "array": [
+                "u64",
+                2
+              ]
+            }
+          },
+          {
+            "name": "participant_count",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LoserClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "positions_open",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bet",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

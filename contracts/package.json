@@ -13,7 +13,8 @@
     "deploy": "ts-node -P tsconfig.json scripts/deploy.ts",
     "mint:create": "ts-node -P tsconfig.json scripts/create_mint.ts",
     "airdrop": "ts-node -P tsconfig.json scripts/airdrop_usdc.ts",
-    "smoke": "ts-node -P tsconfig.json scripts/smoke.ts"
+    "smoke": "ts-node -P tsconfig.json scripts/smoke.ts",
+    "topup": "ts-node -P tsconfig.json scripts/top_up.ts"
   },
   "dependencies": {
     "@anchor-lang/core": "^1.2.2"

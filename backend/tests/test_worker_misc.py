@@ -195,7 +195,7 @@ async def test_admin_bet_view_lists_payout_tasks(worker, client, market, provide
     bet = await settled_after_tick(worker, market, provider, scripted, repo, chain, clock)
     await worker.tick()
     view = (await client.get(f"/admin/bets/{bet.id}", headers=ADMIN)).json()
-    assert [t["status"] for t in view["payout_tasks"]] == ["done", "done"]
+    assert [t["status"] for t in view["payout_tasks"]] == ["done", "done", "done"]  # two claims and a loser close
 
 
 # --- config ---
