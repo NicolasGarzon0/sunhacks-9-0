@@ -90,8 +90,8 @@ export function OpenView({ token, market, participants, position, wallet, now, a
   const errCode = dep.state.error?.code;
   const errCtx = { minUsd: market.limits.min_stake_usd, maxUsd: market.limits.max_stake_usd };
 
-  // The display name and the wallet / log in box show up together, once an amount is set (a signed in wallet sees them at once).
-  const walletStepHidden = wallet.provider.requiresLogin && !wallet.address && !parsed.ok;
+  // Steps show one after another: the teams, then the amount (once a team is picked), then the display name, wallet / log in and the button (once an amount is set).
+  const walletStepHidden = !parsed.ok;
 
   const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin && parsed.ok ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
 
@@ -122,7 +122,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
           </div>
           {held !== null ? <p className="muted">A wallet can hold one team in a bet, so you can only add to {teams[held]}.</p> : null}
           {full ? <p className="notice" role="status">This bet is full. Only people who are already in can add more.</p> : null}
-          <AmountInput value={amount} onChange={setAmount} chips={CHIPS} error={amountError} disabled={busy} />
+          {side === null ? null : <AmountInput value={amount} onChange={setAmount} chips={CHIPS} error={amountError} disabled={busy} />}
           {parsed.ok ? (
             <PayoutPreview
               team={side === null ? null : teams[side]} preview={preview.preview} loading={preview.loading}
@@ -150,7 +150,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
           {dep.state.step === "error" && errCode ? (
             <p className="error-box" role="alert">{errorCopy(errCode, errCtx)}</p>
           ) : null}
-          {side === null ? null : (
+          {side === null || !parsed.ok ? null : (
             <button type="submit" className="btn primary" disabled={!canDeposit}>{busy ? <span className="spinner" aria-hidden="true" /> : null}{label}</button>
           )}
         </form>

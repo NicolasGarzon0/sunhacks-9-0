@@ -53,6 +53,13 @@ beforeEach(() => {
 
 async function openForm() {
   await screen.findByRole("radiogroup");
+}
+
+/** The wallet box comes after a team and an amount are set. */
+async function openWallet(amount = "5") {
+  await openForm();
+  await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
+  await userEvent.type(screen.getByLabelText("Amount (USD)"), amount);
   await waitFor(() => expect(screen.getByText(/Test wallet on devnet/)).toBeInTheDocument());
   await waitFor(() => expect(screen.getByText("$25.00")).toBeInTheDocument());
 }
@@ -257,13 +264,14 @@ describe("deposit", () => {
   it("disables the button for invalid input and explains the amount", async () => {
     renderBet();
     await openForm();
-    const btn = () => screen.getByRole("button", { name: /Pick a team|Enter an amount|Deposit/ });
-    expect(screen.queryByRole("button", { name: /Pick a team|Enter an amount|Deposit/ })).toBeNull(); // no button until a team is picked
+    const noBtn = () => expect(screen.queryByRole("button", { name: /Pick a team|Enter an amount|Deposit/ })).toBeNull();
+    noBtn(); // no amount field and no button until a team is picked
+    expect(screen.queryByLabelText("Amount (USD)")).toBeNull();
     await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
-    expect(btn()).toBeDisabled();
+    noBtn(); // the amount comes first, the button after it
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "0.5");
     expect(screen.getByText("The minimum is $1.00.")).toBeInTheDocument();
-    expect(btn()).toBeDisabled();
+    noBtn();
     await userEvent.clear(screen.getByLabelText("Amount (USD)"));
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "25");
     expect(screen.getByText("The most one wallet can put in is $20.00.")).toBeInTheDocument();
@@ -312,6 +320,8 @@ describe("airdrop", () => {
     api.airdrop.mockResolvedValue({ ...funded, minted_base: 25e6, minted_usd: "25.00", signature: "AIR", explorer: "x" });
     renderBet();
     await screen.findByRole("radiogroup");
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Get test USDC" }));
     expect(await screen.findByText("$25.00")).toBeInTheDocument();
     expect(api.airdrop).toHaveBeenCalledWith("tok", expect.any(String));
@@ -323,6 +333,8 @@ describe("airdrop", () => {
     api.airdrop.mockRejectedValue(new ApiError("AIRDROP_LIMIT", 409));
     renderBet();
     await screen.findByRole("radiogroup");
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
+    await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Get test USDC" }));
     expect(await screen.findByText("Test USDC is not available right now.")).toBeInTheDocument();
   });
@@ -369,7 +381,7 @@ describe("untrusted text and wallet", () => {
 
   it("shows the test wallet notice and lets the user reset it", async () => {
     renderBet();
-    await openForm();
+    await openWallet();
     const addr = () => document.querySelector(".addr")!.textContent;
     const before = addr();
     expect(before).toMatch(/…/);
@@ -382,10 +394,10 @@ describe("untrusted text and wallet", () => {
   it("shows a Log in button and a disabled deposit for a login wallet that is not signed in", async () => {
     renderBet(new PrivyWalletProvider());
     await screen.findByRole("radiogroup");
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
     expect(screen.queryByRole("button", { name: "Log in" })).toBeNull(); // the sign in box waits for an amount
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
     expect(screen.getByRole("button", { name: "Log in to deposit" })).toBeDisabled();
   });
 });
@@ -415,6 +427,7 @@ describe("login wallet (Privy) in the page", () => {
     renderBet(provider);
     await screen.findByRole("radiogroup");
     expect(screen.queryByText(/Test wallet on devnet/)).toBeNull();
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     await userEvent.click(screen.getByRole("button", { name: "Log in" }));
     await waitFor(() => expect(screen.getByText("Signed in")).toBeInTheDocument());
@@ -433,6 +446,7 @@ describe("login wallet (Privy) in the page", () => {
     api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
     api.depositSubmit.mockImplementation(async () => ({ ok: true, signature: "SIG9", explorer: "x", already: false, market: market() }));
     renderBet(provider);
+    await userEvent.click(await screen.findByRole("radio", { name: /^Arizona Cardinals/ }));
     await userEvent.type(await screen.findByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
     await userEvent.click(await screen.findByRole("button", { name: "Get test USDC" }));
@@ -453,6 +467,7 @@ describe("login wallet (Privy) in the page", () => {
     void real;
     api.depositTx.mockResolvedValue({ ...txFor(1, "5"), transaction_b64: toBase64(wire), message_b64: toBase64(message) });
     renderBet(provider);
+    await userEvent.click(await screen.findByRole("radio", { name: /^Arizona Cardinals/ }));
     await userEvent.type(await screen.findByLabelText("Amount (USD)"), "5");
     await userEvent.click(await screen.findByRole("button", { name: "Log in" }));
     await waitFor(() => expect(screen.getByText("$25.00")).toBeInTheDocument());
