@@ -141,7 +141,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
           {dep.state.step === "error" && errCode ? (
             <p className="error-box" role="alert">{errorCopy(errCode, errCtx)}</p>
           ) : null}
-          <button type="submit" className="btn primary" disabled={!canDeposit}>{label}</button>
+          <button type="submit" className="btn primary" disabled={!canDeposit}>{busy ? <span className="spinner" aria-hidden="true" /> : null}{label}</button>
         </form>
       )}
       <Card title={`Who is in (${participants.length})`}>

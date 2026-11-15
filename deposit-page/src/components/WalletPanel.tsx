@@ -26,7 +26,7 @@ export function WalletPanel(p: Props) {
         <p className="label">Wallet</p>
         <p>Log in with your email to get a wallet. It takes a few seconds.</p>
         <button type="button" className="btn" disabled={wallet.connecting} onClick={wallet.retry}>
-          {wallet.connecting ? "Logging in…" : "Log in"}
+          {wallet.connecting ? <span className="spinner" aria-hidden="true" /> : null}{wallet.connecting ? "Logging in…" : "Log in"}
         </button>
         {wallet.error ? <p className="field-error" role="alert">{wallet.error}</p> : null}
       </section>
@@ -75,7 +75,7 @@ export function WalletPanel(p: Props) {
         <div className="airdrop">
           <p>{p.info && !p.info.has_token_account ? "This wallet has no test USDC yet." : "This wallet needs more test USDC."}</p>
           <button type="button" className="btn secondary" disabled={p.airdropping || !wallet.ready} onClick={p.onAirdrop}>
-            {p.airdropping ? "Getting test USDC…" : "Get test USDC"}
+            {p.airdropping ? <span className="spinner" aria-hidden="true" /> : null}{p.airdropping ? "Getting test USDC…" : "Get test USDC"}
           </button>
           {p.airdropError ? <p className="field-error" role="alert">{errorCopy(p.airdropError)}</p> : null}
         </div>
