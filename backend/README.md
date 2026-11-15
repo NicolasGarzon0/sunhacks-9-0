@@ -354,6 +354,58 @@ Env: `AIRDROP_ENABLED`, `AIRDROP_MAX_PER_WALLET_USD`, `AIRDROP_DAILY_CAP_USD`, `
 - If a kickoff time changes after a market opens, `funding_closes_at` and `settle_after` are not recomputed (and the chain
   already has them).
 
+## Rehearsals on devnet (chunk 6)
+
+`scripts/rehearsal.py` proves the stages that need a finished game (lock, settle, payouts, refunds, close_bet, expired link) on real
+devnet, without waiting for one. **It does not fake the chain.** It moves the simulated game and the market's timestamps in the database,
+and the *running* backend worker does the real work (chain-service, devnet, the deposit page). The script only changes rows, waits, and
+then verifies against devnet (RPC), the database and the page. Dev only: nothing in it is reachable over HTTP and it adds no endpoint.
+
+**Refusals.** Every command first checks `GAME_PROVIDER=simulated`, `CHAIN_MODE=real` and that chain-service's `/health` says
+`cluster: devnet` (the service itself aborts on any other genesis hash), that the backend worker is ticking, and that the running backend
+answers the simulated game admin endpoint (it answers 409 on the real provider). Otherwise it prints `REFUSED` and exits 2.
+
+**What it changes** (each change prints a line starting `CHANGED`):
+
+| Stage | Change in the database | What the worker then does |
+|---|---|---|
+| lock | `bets.funding_closes_at` to one minute ago | `close_funding`: snapshots, `lock` on chain, `locked` text |
+| result | `bets.kickoff_utc` and `sim_games.kickoff_utc` ten minutes back, `sim_games` row set to final (`finish_sim_game`) | polls the result, `settle` on chain, winner `claim`s, loser `close_loser_position`s, `result` text |
+| cancelled / postponed | `sim_games.status` (before the lock) | `refund_all` on chain, refund payouts, `refund_result` text |
+| link grace | `bets.payouts_completed_at` moved back past the grace (the running process keeps `LINK_GRACE_HOURS`, so no restart) | `close_bet` (vault dust to the treasury, rent back to the payer); the link answers 410 |
+
+The on chain `funding_closes_at` is not touched (the contract's `lock` only checks `refund_after`), and `settle_after` stays in the future.
+
+```sh
+.venv/bin/python scripts/rehearsal.py check                       # guards + the newest bets
+.venv/bin/python scripts/rehearsal.py settle                      # scenario 1 on the open market of the live test number
+.venv/bin/python scripts/rehearsal.py settle --fresh              # ... or on a new market with two local wallets ($10 away, $5 home)
+.venv/bin/python scripts/rehearsal.py refund-one-sided --wallets 1   # scenario 2, one wallet: refund reason too_few_participants
+.venv/bin/python scripts/rehearsal.py refund-one-sided --wallets 2   # two wallets, same side: reason one_sided
+.venv/bin/python scripts/rehearsal.py refund-game cancelled       # scenario 3 (also: postponed), two wallets on opposite sides
+.venv/bin/python scripts/rehearsal.py cleanup [--purge-games]
+```
+
+New markets are opened through `MarketService.open_market` (the function the text flow's YES calls, so the proposer gets the real link
+text), on a simulated game `sim:rehearsal-<tag>` that kicks off in two hours. Deposits use the page's own sponsored flow through
+`chain-service/scripts/deposit_client.ts` (airdrop, `deposit_tx`, local signature, `deposit_submit`) with two reused wallets (`rehearsal-pool-0/1`) in the gitignored
+`chain-service/.dev-wallets/`, airdropped only when they hold less than the stake (the airdrop is limited to 5 per hour per address). Verification reads devnet through `chain-service/scripts/rehearsal_txs.ts` (transactions of the Bet
+account with their instruction names, whether each Position account still exists) and
+`deposit-page/e2e/rehearsal_page.mjs` (real Chrome, reports which view the page shows, screenshots in `deposit-page/screenshots/`,
+gitignored). Results of the first full run: `docs/chunk-6-rehearsal-report.md`. The command exits 1 if any check fails and prints a markdown table of every check.
+
+**Cleanup and reruns.** Each stage looks at the current state first, so a command interrupted halfway can be run again (for `settle`, the
+balances taken before the scenario are kept in the gitignored `scripts/.rehearsal_state/<bet>.json`). A settled market cannot be settled
+twice: to repeat scenario 1 use `settle --fresh`. `cleanup` drives any unfinished rehearsal market to the end (cancels its game so the
+worker refunds it, moves the grace so the worker closes the Bet account) and, with `--purge-games`, deletes the finished `sim:rehearsal-*`
+game rows. `POST /admin/games/reset` restores the normal schedule (it replaces every `sim_games` row). Every market the script opens
+ends with `close_bet`, so no rent stays locked. Each fresh wallet costs the payer about 0.0015 SOL (token account) and each market
+about 0.01 SOL, and the airdrop gives 25 test USDC per wallet.
+
+**Limits of a rehearsal.** `SETTLE_CONFIRM_WAIT_MINUTES` is 0 for the simulated provider, so the settle needs one result read, not two.
+To rehearse the two read rule restart the backend with `SETTLE_CONFIRM_WAIT_MINUTES=1` (a process env override, the `.env` file is
+not touched). The grace is moved in the database rather than waited out, so the real countdown is covered by the unit tests only.
+
 ## Endpoints
 - `POST /inbound` (`X-Gateway-Secret`): 401 bad secret, 400 bad payload, 200 duplicate (no-op), 200 accepted
   (reply sent in a background task with idempotency key `reply:<messageId>`), 503 if the DB is down (gateway retries).
@@ -362,7 +414,7 @@ Env: `AIRDROP_ENABLED`, `AIRDROP_MAX_PER_WALLET_USD`, `AIRDROP_DAILY_CAP_USD`, `
 
 ## Tests
 ```sh
-.venv/bin/pytest -q            # 470 tests with the mock chain (and the fake chain service)
+.venv/bin/pytest -q            # 491 tests with the mock chain (and the fake chain service)
 ```
 Uses `TEST_DATABASE_URL` if set, otherwise spins up a throwaway local Postgres (needs `initdb`/`pg_ctl`,
 e.g. Homebrew `postgresql`). Each test uses its own schema. The gateway and Anthropic are mocked. Never touches
