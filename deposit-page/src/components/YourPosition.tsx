@@ -21,7 +21,7 @@ export function YourPosition({ position, market }: { position: Position | null; 
     sub = "Refunds have no fee.";
   } else {
     line = `You are in with $${stake} on ${team}`;
-    sub = market.status === "open" ? "You can add more on the same team until betting closes." : "Betting is closed. Good luck.";
+    sub = market.status === "open" ? "" : "Betting is closed. Good luck.";
   }
   return (
     <Card tone="accent">
