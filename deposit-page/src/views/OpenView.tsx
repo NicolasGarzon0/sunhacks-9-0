@@ -123,10 +123,12 @@ export function OpenView({ token, market, participants, position, wallet, now, a
           {held !== null ? <p className="muted">A wallet can hold one team in a bet, so you can only add to {teams[held]}.</p> : null}
           {full ? <p className="notice" role="status">This bet is full. Only people who are already in can add more.</p> : null}
           <AmountInput value={amount} onChange={setAmount} chips={CHIPS} error={amountError} disabled={busy} />
-          <PayoutPreview
-            team={side === null ? null : teams[side]} preview={preview.preview} loading={preview.loading}
-            errorCode={preview.error} feeBps={market.fee_bps} hasInput={parsed.ok}
-          />
+          {parsed.ok ? (
+            <PayoutPreview
+              team={side === null ? null : teams[side]} preview={preview.preview} loading={preview.loading}
+              errorCode={preview.error} feeBps={market.fee_bps} hasInput={parsed.ok}
+            />
+          ) : null}
           {walletStepHidden ? null : (
             <div className="field">
               <label htmlFor="display-name" className="label">Display name <span className="muted">(optional)</span></label>
