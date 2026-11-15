@@ -90,7 +90,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
   const errCode = dep.state.error?.code;
   const errCtx = { minUsd: market.limits.min_stake_usd, maxUsd: market.limits.max_stake_usd };
 
-  const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
+  const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin && parsed.ok ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
 
   return (
     <>
