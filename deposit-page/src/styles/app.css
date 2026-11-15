@@ -180,20 +180,17 @@ a:hover { text-decoration-color: var(--text); }
 .banner { position: sticky; top: 0; z-index: 5; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); color: var(--text); text-align: center; padding: calc(8px + var(--safe-top)) 12px 8px; font-size: 14px; }
 
 .progress ol { list-style: none; display: grid; gap: 8px; padding: 0; margin: 16px 0 0; }
-.progress li { padding-left: 28px; position: relative; color: var(--muted); font-size: 14px; }
-.progress li::before { content: ""; position: absolute; left: 3px; top: 5px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); }
+.progress li { color: var(--muted); font-size: 14px; }
 .progress li.now { color: var(--text); font-weight: 500; }
-.progress li.now::before { border-color: #fff; background: #fff; animation: pulse 1s ease-in-out infinite; }
+.progress li.now::after { content: "…"; }
 .progress li.done { color: var(--text); }
-.progress li.done::before { background: var(--good); border-color: var(--good); }
-.progress li.done::after { content: "✓"; position: absolute; left: 6px; top: 3px; font-size: 9px; font-weight: 700; color: #000; line-height: 16px; }
+.progress li.done::after { content: " ✓"; color: var(--good); }
 
 .success { display: grid; gap: 10px; justify-items: start; }
 .success h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.04em; margin: 0; }
 .success p { margin: 0; }
 .success a { color: var(--muted); font-size: 14px; }
 .success a:hover { color: var(--text); }
-.check { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--good-bg); border: 1px solid var(--good-border); color: var(--good); font-size: 22px; animation: pop 0.35s var(--ease); }
 .success .btn { background: #fff; color: #000; border-color: #fff; width: 100%; margin-top: 8px; font-weight: 600; }
 .success .btn:hover:not(:disabled) { background: #e5e5e5; }
 

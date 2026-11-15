@@ -8,7 +8,6 @@ export function SuccessScreen({ result, summary, onView }: Props) {
   return (
     <Card tone="accent">
       <div className="success" data-testid="success">
-        <span className="check" aria-hidden="true">✓</span>
         <h2>You are in.</h2>
         {summary ? (
           <>
