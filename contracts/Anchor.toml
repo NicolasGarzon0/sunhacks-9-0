@@ -1,0 +1,27 @@
+[toolchain]
+anchor_version = "1.2.2"
+solana_version = "3.1.14"
+package_manager = "npm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+handshake_pool = "HmgmQJP136sLcH1gQDywG7MeUX9xZN6wZMDdzsgf9X1c"
+
+[provider]
+cluster = "localnet"
+# throwaway wallet, gitignored; generated with solana-keygen, never printed
+wallet = ".keys/test-wallet.json"
+
+[scripts]
+# NOTE: build with `anchor build --arch v0` (see README): the default SBPF v3 is rejected by solana-test-validator 3.1.14
+# LiteSVM suite (fast, can move the clock) and the validator smoke test
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests-validator/**/*.test.ts\""
+test-litesvm = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.test.ts\""
+
+[test]
+startup_wait = 20000
+
+[hooks]

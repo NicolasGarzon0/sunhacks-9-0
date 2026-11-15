@@ -1,0 +1,13 @@
+# build output, ledgers, deps
+target/
+.anchor/
+test-ledger/
+node_modules/
+.surfpool/
+.DS_Store
+**/*.rs.bk
+# keypairs: never commit any
+.keys/
+**/*keypair*.json
+**/id.json
+*.pem
