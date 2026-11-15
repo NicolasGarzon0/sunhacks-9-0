@@ -1,25 +1,25 @@
-# sunhacks-9-0
+# textbet
 
-A [Spectrum](https://photon.codes/docs/spectrum-ts) project. Wired with: imessage.
+Text an AI agent a game, get a betting link, share it with friends. Solana escrow holds the money and pays the winners automatically.
 
-## Environment
+Built for SunHacks 9.0, Solana track.
 
-Before running, open `.env` and fill in the values:
+## How it works
 
-From your project Settings on the [Photon dashboard](https://app.photon.codes):
+1. DM the agent on iMessage: "create a bet for ASU vs Texas Tech"
+2. Confirm the game and get a betting link
+3. Share the link. Friends pick a side, choose an amount, and pay
+4. When the game ends, winners are paid automatically and the agent texts you the result
 
-- `PROJECT_ID`
-- `PROJECT_SECRET`
+## Stack
 
-## Run
+- Agent: Python, Claude Haiku, Photon (iMessage)
+- Backend: Python, Supabase, Render
+- Escrow: Rust (Anchor) on Solana
+- Deposit page: TypeScript, Vercel
 
-```sh
-npm install
-npm run start
-```
+Runs on Solana devnet with test USDC. No real money.
 
-## Where to go next
+## Team
 
-- [Spectrum docs](https://photon.codes/docs/spectrum-ts)
-- Edit `src/index.ts` to replace the echo loop with real agent logic.
-- Add more providers from `spectrum-ts/providers/*`.
+Nicolas Garzon, ASU
