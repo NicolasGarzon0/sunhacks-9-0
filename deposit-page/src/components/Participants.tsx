@@ -1,6 +1,5 @@
 import type { MarketView, Participant } from "../api/types";
 import { shortAddr } from "../lib/format";
-import { TeamBadge } from "./Basics";
 
 interface Props { participants: Participant[]; market: MarketView; viewer: string | null }
 
@@ -17,7 +16,6 @@ export function ParticipantsList({ participants, market, viewer }: Props) {
         const outcome = refunded ? "Refunded" : winning === undefined ? null : p.side === winning ? "Won" : "Lost";
         return (
           <li key={p.wallet} className={you ? "you" : ""}>
-            <TeamBadge name={team} size="sm" />
             <span className="who">
               <span className="clip" title={name}>{name}</span>
               {you ? <span className="tag">You</span> : null}

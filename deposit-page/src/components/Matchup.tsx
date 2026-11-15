@@ -1,7 +1,7 @@
 import type { MarketView } from "../api/types";
 import { formatCountdown, msLeft, phase } from "../lib/countdown";
 import { formatKickoff } from "../lib/format";
-import { StatusChip, TeamBadge } from "./Basics";
+import { StatusChip } from "./Basics";
 
 export function Matchup({ market, now }: { market: MarketView; now: number }) {
   const away = market.teams.side0.name;
@@ -15,12 +15,11 @@ export function Matchup({ market, now }: { market: MarketView; now: number }) {
     <header className="matchup">
       <div className="matchup-top">
         <StatusChip status={market.status} />
-        {market.league ? <span className="league">{market.league.toUpperCase()}</span> : null}
       </div>
       <h1 className="matchup-title">
-        <span className="team"><TeamBadge name={away} size="sm" /><span className="clip" title={away}>{away}</span></span>
+        <span className="team"><span className="clip" title={away}>{away}</span></span>
         <span className="at">at</span>
-        <span className="team"><TeamBadge name={home} size="sm" /><span className="clip" title={home}>{home}</span></span>
+        <span className="team"><span className="clip" title={home}>{home}</span></span>
       </h1>
       <p className="kickoff">Kickoff {formatKickoff(market.kickoff_utc)}</p>
       <dl className="stats">

@@ -1,6 +1,5 @@
 import type { MarketView } from "../api/types";
 import { sharePercent } from "../lib/money";
-import { TeamBadge } from "./Basics";
 
 export function PoolSummary({ market }: { market: MarketView }) {
   const total = market.pools.side0_base + market.pools.side1_base;
@@ -12,7 +11,6 @@ export function PoolSummary({ market }: { market: MarketView }) {
     <div className="poolsum">
       {rows.map((r) => (
         <div key={r.side} className={`poolrow${market.status === "settled" && market.winning_side === r.side ? " winner" : ""}`}>
-          <TeamBadge name={r.team.name} />
           <span className="clip pname" title={r.team.name}>{r.team.name}</span>
           <span className="pval">${r.pool}</span>
           <span className="pshare">{sharePercent(r.base, total)}%</span>

@@ -19,7 +19,7 @@ export function App({ pathname }: { pathname?: string }) {
   return (
     <WalletRoot provider={provider}>
       <div className="shell">
-        <header className="topbar"><a href="/" className="wordmark" aria-label="textbet home">textbet<span>.</span></a><span className="net-badge">{config.cluster}</span></header>
+        <header className="topbar"><a href="/" className="wordmark" aria-label="textbet home">textbet<span>.</span></a></header>
         <main className="page">
           {route.name === "bet" ? <BetPage key={route.token} token={route.token} /> : null}
           {route.name === "home" ? (<><HomeView /><Footer /></>) : null}
