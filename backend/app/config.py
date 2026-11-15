@@ -151,7 +151,11 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
             + ". Set them in the repo-root .env (see .env.example)."
         )
 
-    gateway_url = (get("GATEWAY_URL") or "http://localhost:8787").rstrip("/")
+    def with_scheme(value: str) -> str:
+        """Render's private-network `hostport` has no scheme (e.g. `chain-service:10000`); assume plain http for it."""
+        return value if "://" in value else f"http://{value}"
+
+    gateway_url = with_scheme(get("GATEWAY_URL") or "http://localhost:8787").rstrip("/")
     parsed = urlparse(gateway_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ConfigError("GATEWAY_URL is not a valid http(s) URL")
@@ -294,7 +298,7 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         sports_call_budget_monthly=integer("SPORTS_CALL_BUDGET_MONTHLY", 100, 0),
         claim_max_attempts=integer("CLAIM_MAX_ATTEMPTS", 8, 1),
         claim_backoff_seconds=integer("CLAIM_BACKOFF_SECONDS", 30, 0),
-        chain_service_url=(get("CHAIN_SERVICE_URL") or "").rstrip("/"),
+        chain_service_url=with_scheme(get("CHAIN_SERVICE_URL") or "").rstrip("/") if get("CHAIN_SERVICE_URL") else "",
         chain_service_secret=get("CHAIN_SERVICE_SECRET") or "",
         contract_refund_buffer_hours=integer("CONTRACT_REFUND_BUFFER_HOURS", 12, 1),
         payer_min_sol_alert=_float(get("PAYER_MIN_SOL_ALERT"), 0.3, "PAYER_MIN_SOL_ALERT"),

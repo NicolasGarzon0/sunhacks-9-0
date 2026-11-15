@@ -136,3 +136,16 @@ def test_missing_link_settings_are_named():
     with pytest.raises(ConfigError) as e:
         load_settings(env, env_file=None)
     assert "LINK_SIGNING_SECRET" in str(e.value) and "DEPOSIT_PAGE_URL" in str(e.value)
+
+
+def test_private_network_hostport_gets_http_scheme():
+    from app.config import load_settings
+    base = {
+        "DATABASE_URL": "postgresql://x", "GATEWAY_SHARED_SECRET": "g", "ADMIN_SECRET": "a", "ANTHROPIC_API_KEY": "k",
+        "LINK_SIGNING_SECRET": "s" * 32, "DEPOSIT_PAGE_URL": "https://example.com",
+        "GATEWAY_URL": "gateway:10000", "CHAIN_MODE": "real", "TREASURY_PUBKEY": "T",
+        "CHAIN_SERVICE_URL": "chain-service:10000", "CHAIN_SERVICE_SECRET": "c" * 16,
+    }
+    s = load_settings(base, env_file=None)
+    assert s.gateway_url == "http://gateway:10000"
+    assert s.chain_service_url == "http://chain-service:10000"

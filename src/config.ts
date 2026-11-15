@@ -26,7 +26,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   let backendUrl: string;
   try {
-    backendUrl = new URL(backendUrlRaw).toString().replace(/\/+$/, "");
+    // Render's private-network host:port has no scheme; assume plain http for it.
+    backendUrl = new URL(backendUrlRaw.includes("://") ? backendUrlRaw : `http://${backendUrlRaw}`).toString().replace(/\/+$/, "");
   } catch {
     throw new ConfigError("BACKEND_URL is not a valid URL");
   }

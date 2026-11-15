@@ -1,0 +1,124 @@
+# Handshake Bets on Render. Devnet only. All services: Starter, Oregon, exactly 1 instance, manual deploys.
+# Secrets use `sync: false`: they are entered in the Render dashboard, never stored in this file.
+# Services talk over Render's private network (fromService), nothing is hardcoded.
+# The backend runs the lifecycle worker inside its own process, so it must never run more than 1 instance.
+services:
+  # Signs and sends Solana devnet transactions. Holds the payer, oracle and mint authority keys. Private only.
+  - type: pserv
+    name: chain-service
+    runtime: node
+    plan: starter
+    region: oregon
+    numInstances: 1
+    autoDeploy: false
+    rootDir: chain-service
+    buildCommand: npm ci --include=dev
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: PORT
+        value: "10000"
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: PROGRAM_ID
+        value: 38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE # contracts/devnet.json
+      - key: TEST_USDC_MINT
+        value: DBR7ojMEASwJAZbY5QZEML6gPbG3QqxiJfuspGZanBqM # contracts/devnet.json
+      - key: TREASURY_PUBKEY
+        value: GiAL8s2at8zKmsMqisRVpzuaciJfL1c7R7tcfzg4ejjC # contracts/devnet.json
+      - key: CHAIN_SERVICE_SECRET
+        sync: false
+      - key: PAYER_SECRET_KEY
+        sync: false
+      - key: ORACLE_SECRET_KEY
+        sync: false
+      - key: MINT_AUTHORITY_SECRET_KEY
+        sync: false
+
+  # FastAPI backend: iMessage handling, market API for the deposit page, lifecycle worker. Public.
+  - type: web
+    name: backend
+    runtime: python
+    plan: starter
+    region: oregon
+    numInstances: 1
+    autoDeploy: false
+    rootDir: backend
+    buildCommand: pip install -e .
+    startCommand: python -m app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: BACKEND_PORT
+        value: "10000"
+      - key: CHAIN_MODE
+        value: real
+      - key: GAME_PROVIDER
+        value: realtime
+      - key: AIRDROP_ENABLED
+        value: "true"
+      - key: TREASURY_PUBKEY
+        value: GiAL8s2at8zKmsMqisRVpzuaciJfL1c7R7tcfzg4ejjC # contracts/devnet.json
+      - key: CHAIN_SERVICE_URL
+        fromService:
+          type: pserv
+          name: chain-service
+          property: hostport
+      - key: GATEWAY_URL
+        fromService:
+          type: pserv
+          name: gateway
+          property: hostport
+      # Placeholders until the Vercel URL exists; updated in the dashboard / by update_environment_variables.
+      - key: DEPOSIT_PAGE_URL
+        value: https://deposit-page.invalid
+      - key: DEPOSIT_PAGE_ORIGIN
+        value: https://deposit-page.invalid
+      - key: CHAIN_SERVICE_SECRET
+        sync: false
+      - key: GATEWAY_SHARED_SECRET
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SPORTS_API_KEY
+        sync: false
+      - key: LINK_SIGNING_SECRET
+        sync: false
+
+  # Photon/Spectrum iMessage gateway. Connects OUT to Photon, so it needs no public traffic. Private only.
+  - type: pserv
+    name: gateway
+    runtime: node
+    plan: starter
+    region: oregon
+    numInstances: 1
+    autoDeploy: false
+    buildCommand: npm ci --include=dev
+    startCommand: npm start
+    buildFilter:
+      paths:
+        - src/**
+        - package.json
+        - package-lock.json
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: PORT
+        value: "10000"
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: backend
+          property: hostport
+      - key: PROJECT_ID
+        sync: false
+      - key: PROJECT_SECRET
+        sync: false
+      - key: GATEWAY_SHARED_SECRET
+        sync: false

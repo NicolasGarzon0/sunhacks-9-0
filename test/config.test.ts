@@ -22,3 +22,8 @@ test("rejects bad PORT and BACKEND_URL", () => {
   assert.throws(() => loadConfig({ ...base, PORT: "abc" }), /PORT/);
   assert.throws(() => loadConfig({ ...base, BACKEND_URL: "not a url" }), /BACKEND_URL/);
 });
+
+test("BACKEND_URL without a scheme (Render private host:port) gets http://", () => {
+  const cfg = loadConfig({ PROJECT_ID: "p", PROJECT_SECRET: "s", BACKEND_URL: "backend:10000", GATEWAY_SHARED_SECRET: "g" });
+  assert.equal(cfg.backendUrl, "http://backend:10000");
+});
