@@ -258,7 +258,7 @@ describe("deposit", () => {
     renderBet();
     await openForm();
     const btn = () => screen.getByRole("button", { name: /Pick a team|Enter an amount|Deposit/ });
-    expect(btn()).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Pick a team|Enter an amount|Deposit/ })).toBeNull(); // no button until a team is picked
     await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
     expect(btn()).toBeDisabled();
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "0.5");
@@ -385,6 +385,7 @@ describe("untrusted text and wallet", () => {
     expect(screen.queryByRole("button", { name: "Log in" })).toBeNull(); // the sign in box waits for an amount
     await userEvent.type(screen.getByLabelText("Amount (USD)"), "5");
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /^Arizona Cardinals/ }));
     expect(screen.getByRole("button", { name: "Log in to deposit" })).toBeDisabled();
   });
 });
