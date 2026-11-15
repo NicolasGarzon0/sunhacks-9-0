@@ -90,7 +90,8 @@ export function OpenView({ token, market, participants, position, wallet, now, a
   const errCode = dep.state.error?.code;
   const errCtx = { minUsd: market.limits.min_stake_usd, maxUsd: market.limits.max_stake_usd };
 
-  // Steps show one after another: the teams, then the amount (once a team is picked), then the display name, wallet / log in and the button (once an amount is set).
+  // Steps show one after another: the teams, then the amount (once a team is picked), then the wallet / log in box (once an amount is set).
+  // The display name and the deposit button come after logging in. The log in box has the only log in button.
   const walletStepHidden = !parsed.ok;
 
   const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin && parsed.ok ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
@@ -115,7 +116,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
                   multiplier={s === 0 ? market.multipliers?.side0 ?? null : market.multipliers?.side1 ?? null}
                   selected={side === s} disabled={other || busy}
                   reason={other ? `You already picked ${teams[held as 0 | 1]} in this bet.` : undefined}
-                  onSelect={() => setPicked(s)}
+                  onSelect={() => setPicked(picked === s ? null : s)}
                 />
               );
             })}
@@ -129,7 +130,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
               errorCode={preview.error} feeBps={market.fee_bps} hasInput={parsed.ok}
             />
           ) : null}
-          {walletStepHidden ? null : (
+          {walletStepHidden || !wallet.ready ? null : (
             <div className="field">
               <label htmlFor="display-name" className="label">Display name <span className="muted">(optional)</span></label>
               <input
@@ -150,7 +151,7 @@ export function OpenView({ token, market, participants, position, wallet, now, a
           {dep.state.step === "error" && errCode ? (
             <p className="error-box" role="alert">{errorCopy(errCode, errCtx)}</p>
           ) : null}
-          {side === null || !parsed.ok ? null : (
+          {side === null || !parsed.ok || (!wallet.ready && wallet.provider.requiresLogin) ? null : (
             <button type="submit" className="btn primary" disabled={!canDeposit}>{busy ? <span className="spinner" aria-hidden="true" /> : null}{label}</button>
           )}
         </form>
