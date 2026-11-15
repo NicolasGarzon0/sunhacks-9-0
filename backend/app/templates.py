@@ -102,10 +102,7 @@ def market_open(bet, tz: str, grace_hours: int, url: str) -> str:
     return (
         f"Your bet is open: {bet.away_name} at {bet.home_name}, {when(bet.kickoff_utc, tz)}.\n"
         f"Betting closes {when(bet.funding_closes_at, tz)}.\n"
-        "Forward this link to anyone who wants in. Each person picks a side and their own amount "
-        f"from {usd_label(bet.min_stake_base)} to {usd_label(bet.max_stake_base)}.\n"
-        f"{fee_line(bet.fee_bps)}\n"
-        f"The link stays live until {_hours(grace_hours)} after payouts and shows live odds and results.\n"
+        "Forward this link to anyone who wants in.\n"
         f"{url}"
     )
 

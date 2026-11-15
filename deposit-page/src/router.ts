@@ -1,8 +1,7 @@
-export type Route = { name: "home" } | { name: "bet"; token: string } | { name: "notfound" };
+export type Route = { name: "bet"; token: string } | { name: "notfound" };
 
 export function matchRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, "") || "/";
-  if (path === "/") return { name: "home" };
   const m = /^\/b\/([^/]+)$/.exec(path);
   if (m) {
     try {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Footer, LiveRegion, ReconnectBanner, Skeleton } from "./components/Basics";
+import { LiveRegion, ReconnectBanner, Skeleton } from "./components/Basics";
 import { useMarket } from "./hooks/useMarket";
 import { useNow } from "./hooks/useNow";
 import { statusToView, type ViewName } from "./lib/status";
@@ -60,7 +60,6 @@ export function BetPage({ token }: { token: string }) {
       {m.reconnecting ? <ReconnectBanner /> : null}
       <LiveRegion message={announce} />
       {body}
-      <Footer />
     </>
   );
 }

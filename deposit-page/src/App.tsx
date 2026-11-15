@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { BetPage } from "./BetPage";
-import { Footer } from "./components/Basics";
 import { config } from "./config";
 import { matchRoute } from "./router";
-import { HomeView, InvalidView } from "./views/Views";
+import { InvalidView } from "./views/Views";
 import { createWalletProvider, WalletRoot } from "./wallet";
 
 export function App({ pathname }: { pathname?: string }) {
@@ -19,11 +18,10 @@ export function App({ pathname }: { pathname?: string }) {
   return (
     <WalletRoot provider={provider}>
       <div className="shell">
-        <header className="topbar"><a href="/" className="wordmark" aria-label="TextBet home">TextBet</a></header>
+        <header className="topbar"><span className="wordmark">TextBet</span></header>
         <main className="page">
           {route.name === "bet" ? <BetPage key={route.token} token={route.token} /> : null}
-          {route.name === "home" ? (<><HomeView /><Footer /></>) : null}
-          {route.name === "notfound" ? (<><InvalidView /><Footer /></>) : null}
+          {route.name === "notfound" ? <InvalidView /> : null}
         </main>
       </div>
     </WalletRoot>

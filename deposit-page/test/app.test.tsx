@@ -102,7 +102,6 @@ describe("status views", () => {
     expect(screen.getByText("1.95x")).toBeInTheDocument();
     expect(screen.getByTestId("countdown").textContent).toMatch(/\d/);
     expect(screen.getByText("Dana")).toBeInTheDocument();
-    expect(screen.getByText("Test money on devnet. Fees are sponsored.")).toBeInTheDocument();
   });
 
   it("the countdown follows the server clock, not a wrong browser clock", async () => {

@@ -60,9 +60,7 @@ async def test_success_opens_market_and_texts_the_link_once(chat, extractor, rep
     assert text == (
         f"Your bet is open: Seattle Seahawks at Arizona Cardinals, {KICKOFF_CARDS}.\n"
         "Betting closes Sunday Nov 15, 1:05 PM MST.\n"
-        "Forward this link to anyone who wants in. Each person picks a side and their own amount from $1 to $20.\n"
-        "A 5% fee on the losing side covers operating costs.\n"
-        "The link stays live until 2 hours after payouts and shows live odds and results.\n"
+        "Forward this link to anyone who wants in.\n"
         f"{url}"
     )
     assert url.startswith("https://deposit.test/b/") and market.signer.bet_id(url.rsplit("/", 1)[1]) == bet.id

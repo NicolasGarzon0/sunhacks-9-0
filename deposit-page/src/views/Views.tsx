@@ -97,10 +97,3 @@ export function NetworkErrorView({ onRetry }: { onRetry: () => void }) {
     </Message>
   );
 }
-export function HomeView() {
-  return (
-    <Message title="Friendly bets with your group">
-      Pick a team in a shared pool with friends. Winners split the losing side, minus a small fee. Open the link from your text message to join a bet.
-    </Message>
-  );
-}

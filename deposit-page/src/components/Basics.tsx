@@ -42,7 +42,3 @@ export function ReconnectBanner() {
 export function LiveRegion({ message }: { message: string }) {
   return <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{message}</div>;
 }
-
-export function Footer() {
-  return <footer className="footer"><p>Test money on devnet. Fees are sponsored.</p></footer>;
-}

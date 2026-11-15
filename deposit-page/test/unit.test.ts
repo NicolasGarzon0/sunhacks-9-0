@@ -155,7 +155,7 @@ describe("format and router", () => {
     expect(formatKickoff("nope")).toBe("");
   });
   it("matches routes", () => {
-    expect(matchRoute("/")).toEqual({ name: "home" });
+    expect(matchRoute("/")).toEqual({ name: "notfound" });
     expect(matchRoute("/b/abc.def")).toEqual({ name: "bet", token: "abc.def" });
     expect(matchRoute("/b/abc/")).toEqual({ name: "bet", token: "abc" });
     expect(matchRoute("/b/")).toEqual({ name: "notfound" });
