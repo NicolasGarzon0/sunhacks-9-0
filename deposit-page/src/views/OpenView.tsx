@@ -92,14 +92,14 @@ export function OpenView({ token, market, participants, position, wallet, now, a
 
   // Steps show one after another: the teams, then the amount (once a team is picked), then the wallet / log in box (once an amount is set).
   // The display name and the deposit button come after logging in. The log in box has the only log in button.
-  const walletStepHidden = !parsed.ok;
+  const walletStepHidden = !parsed.ok && held === null; // someone who already has a side sees the wallet box (and Log out) right away
 
   const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin && parsed.ok ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
 
   return (
     <>
       <Matchup market={market} now={now} />
-      <YourPosition position={position} market={market} />
+      {showSuccess ? null : <YourPosition position={position} market={market} />}
       {showSuccess && dep.state.result ? (
         <SuccessScreen result={dep.state.result} summary={dep.state.summary} onView={() => { setDismissed(true); dep.reset(); }} />
       ) : (
