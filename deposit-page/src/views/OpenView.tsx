@@ -90,6 +90,9 @@ export function OpenView({ token, market, participants, position, wallet, now, a
   const errCode = dep.state.error?.code;
   const errCtx = { minUsd: market.limits.min_stake_usd, maxUsd: market.limits.max_stake_usd };
 
+  // The display name and the wallet / log in box show up together, once an amount is set (a signed in wallet sees them at once).
+  const walletStepHidden = wallet.provider.requiresLogin && !wallet.address && !parsed.ok;
+
   const label = busy ? "Working…" : !wallet.ready && wallet.provider.requiresLogin && parsed.ok ? "Log in to deposit" : side === null ? "Pick a team" : !parsed.ok ? "Enter an amount" : `Deposit $${parsed.text} on ${teams[side]}`;
 
   return (
@@ -124,14 +127,16 @@ export function OpenView({ token, market, participants, position, wallet, now, a
             team={side === null ? null : teams[side]} preview={preview.preview} loading={preview.loading}
             errorCode={preview.error} feeBps={market.fee_bps} hasInput={parsed.ok}
           />
-          <div className="field">
-            <label htmlFor="display-name" className="label">Display name <span className="muted">(optional)</span></label>
-            <input
-              id="display-name" className="text" maxLength={24} autoComplete="nickname" placeholder="e.g. Dana"
-              value={name} disabled={busy} onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          {wallet.provider.requiresLogin && !wallet.address && !parsed.ok ? null : (
+          {walletStepHidden ? null : (
+            <div className="field">
+              <label htmlFor="display-name" className="label">Display name <span className="muted">(optional)</span></label>
+              <input
+                id="display-name" className="text" maxLength={24} autoComplete="nickname" placeholder="e.g. Dana"
+                value={name} disabled={busy} onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+          )}
+          {walletStepHidden ? null : (
             <WalletPanel
               wallet={wallet} info={walletInfo} loading={info.loading} unavailable={info.unavailable} infoError={info.error}
               needsUsdc={needsUsdc} airdropping={info.airdropping} airdropError={info.airdropError} onAirdrop={() => void info.airdrop()}
