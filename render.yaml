@@ -68,16 +68,14 @@ services:
           type: pserv
           name: chain-service
           property: hostport
+      # Literal on purpose: backend and gateway reference each other, and a circular fromService did not
+      # resolve (the backend fell back to localhost:8787). Private host names, not public.
       - key: GATEWAY_URL
-        fromService:
-          type: pserv
-          name: gateway
-          property: hostport
-      # Placeholders until the Vercel URL exists; updated in the dashboard / by update_environment_variables.
+        value: http://gateway-2qwy:10000
       - key: DEPOSIT_PAGE_URL
-        value: https://deposit-page.invalid
+        value: https://handshake-bets-deposit-nicolasgarzon0s-projects.vercel.app
       - key: DEPOSIT_PAGE_ORIGIN
-        value: https://deposit-page.invalid
+        value: https://handshake-bets-deposit-nicolasgarzon0s-projects.vercel.app
       - key: CHAIN_SERVICE_SECRET
         sync: false
       - key: GATEWAY_SHARED_SECRET
@@ -114,10 +112,7 @@ services:
       - key: PORT
         value: "10000"
       - key: BACKEND_URL
-        fromService:
-          type: web
-          name: backend
-          property: hostport
+        value: http://backend-87n0:10000 # literal, see GATEWAY_URL on the backend
       - key: PROJECT_ID
         sync: false
       - key: PROJECT_SECRET
