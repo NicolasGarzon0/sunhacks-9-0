@@ -24,6 +24,7 @@ from games.simulated import SimulatedProvider
 from markets.chain import build_chain_client
 from markets.links import LinkSigner
 from markets.service import MarketService
+from markets.worker import Worker
 
 from .config import Settings, load_settings
 from .drafts import BetFlow, Extractor
@@ -59,7 +60,7 @@ class NewGameIn(BaseModel):
 
 
 class StatusIn(BaseModel):
-    status: Literal["postponed", "cancelled", "in_progress"]
+    status: Literal["scheduled", "postponed", "cancelled", "in_progress"]
 
 
 class RosterIn(BaseModel):
@@ -124,9 +125,17 @@ def create_app(
             "backend.started", gameProvider=app.state.provider.name, port=settings.port, gatewayUrl=settings.gateway_url, model=settings.haiku_model,
             timezone=settings.local_timezone,
         )
+        worker_task = None
+        if settings.worker_enabled:
+            worker_task = asyncio.create_task(get_worker().run_forever(), name="market-worker")
+        else:
+            logger.info("worker.disabled")
         try:
             yield
         finally:
+            if worker_task is not None:
+                worker_task.cancel()
+                await asyncio.gather(worker_task, return_exceptions=True)
             if owns_provider and hasattr(app.state.provider, "aclose"):
                 await app.state.provider.aclose()
             if owns_extractor:
@@ -145,17 +154,27 @@ def create_app(
     app.state.provider = provider
     app.state.flow = None
     app.state.market = None
+    app.state.worker = None
 
     def get_market() -> MarketService:
         if app.state.market is None:
             app.state.market = MarketService(
                 app.state.repo, build_chain_client(settings, app.state.repo.pool),
-                LinkSigner(settings.link_signing_secret, settings.deposit_page_url, settings.link_grace_hours),
+                LinkSigner(settings.link_signing_secret, settings.deposit_page_url, settings.link_grace),
                 app.state.gateway, logger, settings, provider=app.state.provider, now=now,
             )
         return app.state.market
 
     app.state.get_market = get_market
+
+    def get_worker() -> Worker:
+        if app.state.worker is None:
+            app.state.worker = Worker(
+                app.state.repo, get_market(), app.state.provider, settings, logger, now=now
+            )
+        return app.state.worker
+
+    app.state.get_worker = get_worker
 
     def get_flow() -> BetFlow:
         if app.state.flow is None:
@@ -249,6 +268,7 @@ def create_app(
         logger.info("admin.games_reset", games=n)
         return {"ok": True, "games": n}
 
+    @app.post("/admin/games/{game_id}/result")
     @app.post("/admin/games/{game_id}/finish")
     async def admin_games_finish(
         game_id: str, body: FinishIn, x_admin_secret: Annotated[str | None, Header()] = None
@@ -336,6 +356,33 @@ def create_app(
             return _err(409, "WRONG_STATE", f"bet is {bet.status}; only settled or refunded bets qualify")
         logger.info("admin.payouts_marked_complete", betId=bet_id)
         return await get_market().admin_view(await app.state.repo.get_bet(bet_id))
+
+    @app.post("/admin/worker/tick")
+    async def admin_worker_tick(x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        """Run one worker tick now (tests and rehearsals). Respects the single worker lock."""
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        summary = await get_worker().tick()
+        return {"ok": True, "tick": summary}
+
+    @app.get("/admin/worker/status")
+    async def admin_worker_status(x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        return await get_worker().status()
+
+    @app.post("/admin/payout_tasks/{task_id}/retry")
+    async def admin_retry_task(task_id: str, x_admin_secret: Annotated[str | None, Header()] = None) -> Any:
+        if denied := _admin_denied(x_admin_secret):
+            return denied
+        task = await app.state.repo.get_payout_task(task_id)
+        if task is None:
+            return _err(404, "NOT_FOUND", "unknown payout task")
+        clock = now or (lambda: datetime.now(timezone.utc))
+        if not await app.state.repo.retry_failed_task(task_id, clock()):
+            return _err(409, "WRONG_STATE", f"task is {task.status}; only failed tasks can be retried")
+        logger.info("admin.payout_task_retry", taskId=task_id, betId=task.bet_id)
+        return {"ok": True, "task": (await app.state.repo.get_payout_task(task_id)).__dict__}  # type: ignore[union-attr]
 
     @app.get("/health")
     async def health() -> Any:

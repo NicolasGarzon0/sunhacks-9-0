@@ -12,3 +12,9 @@ __pycache__/
 # Any other env file variant (the example file stays tracked)
 .env.*
 !.env.example
+
+# Solana keypairs and private keys must never be committed
+.keys/
+*keypair*.json
+id.json
+*.pem

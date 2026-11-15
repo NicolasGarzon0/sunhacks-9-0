@@ -64,13 +64,40 @@ class Bet:
     failure_reason: str | None = None
     refund_reason: str | None = None
     payouts_completed_at: datetime | None = None
+    # worker (chunk 5)
+    result_away_score: int | None = None
+    result_home_score: int | None = None
+    result_winner_side: int | None = None
+    result_first_seen_at: datetime | None = None
+    final_confirmed_at: datetime | None = None
+    last_polled_at: datetime | None = None
+    provider_calls: int = 0
+
+
+@dataclass(frozen=True)
+class PayoutTask:
+    id: str
+    bet_id: str
+    wallet: str
+    kind: str  # win | refund
+    amount_base: int
+    status: str  # pending | done | failed
+    attempts: int
+    next_attempt_at: datetime | None
+    last_error: str | None
+    tx_ref: str | None
+
+
+TASK_COLUMNS = "id::text as id, bet_id::text as bet_id, wallet, kind, amount_base, status, attempts, next_attempt_at, last_error, tx_ref"
 
 
 BET_COLUMNS = (
     "id::text as id, proposer_handle, game_id, league, home_id, home_name, away_id, away_name, "
     "kickoff_utc, status, created_at, side0_name, side1_name, chain_bet_id, fee_bps, treasury, min_stake_base, "
     "max_stake_base, max_participants, funding_closes_at, settle_after, opened_at, locked_at, settled_at, "
-    "winning_side, total_pool_base, fee_paid_base, failure_reason, refund_reason, payouts_completed_at"
+    "winning_side, total_pool_base, fee_paid_base, failure_reason, refund_reason, payouts_completed_at, "
+    "result_away_score, result_home_score, result_winner_side, result_first_seen_at, final_confirmed_at, "
+    "last_polled_at, provider_calls"
 )
 ACTIVE_STATUSES = "('game_confirmed', 'open', 'locked')"  # the unique index predicate in migration 0005
 SIM_COLUMNS = (
@@ -333,6 +360,175 @@ class Repository:
             (at, bet_id),
         )
 
+    # --- worker (chunk 5) ---
+
+    async def bets_by_status(self, *statuses: str) -> list[Bet]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                f"select {BET_COLUMNS} from bets where status = any(%s) order by created_at", (list(statuses),)
+            )
+            return [Bet(**r) for r in await cur.fetchall()]
+
+    async def unpaid_closed_bets(self) -> list[Bet]:
+        """Settled or refunded markets whose payouts are not complete yet."""
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                f"select {BET_COLUMNS} from bets where status in ('settled', 'refunded') "
+                "and payouts_completed_at is null order by created_at"
+            )
+            return [Bet(**r) for r in await cur.fetchall()]
+
+    async def settle_bet(self, bet_id: str, winning_side: int, fee_paid_base: int, total_pool_base: int, at: datetime) -> bool:
+        return await self._transition(
+            "update bets set status = 'settled', winning_side = %s, fee_paid_base = %s, total_pool_base = %s, "
+            "settled_at = %s where id = %s and status = 'locked'",
+            (winning_side, fee_paid_base, total_pool_base, at, bet_id),
+        )
+
+    async def set_refund_intent(self, bet_id: str, reason: str) -> None:
+        """Record why a refund is about to happen (before the chain call), so a crash can be repaired with the right reason."""
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bets set refund_reason = %s where id = %s and status in ('open', 'locked') and refund_reason is null",
+                (reason, bet_id),
+            )
+
+    async def record_result_read(self, bet_id: str, home: int, away: int, winner: int | None, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bets set result_home_score = %s, result_away_score = %s, result_winner_side = %s, "
+                "result_first_seen_at = %s where id = %s",
+                (home, away, winner, at, bet_id),
+            )
+
+    async def clear_result_read(self, bet_id: str) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bets set result_home_score = null, result_away_score = null, result_winner_side = null, "
+                "result_first_seen_at = null where id = %s and final_confirmed_at is null",
+                (bet_id,),
+            )
+
+    async def mark_final_confirmed(self, bet_id: str, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute("update bets set final_confirmed_at = %s where id = %s", (at, bet_id))
+
+    async def mark_polled(self, bet_id: str, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update bets set last_polled_at = %s, provider_calls = provider_calls + 1 where id = %s", (at, bet_id)
+            )
+
+    # payout tasks
+
+    async def create_payout_tasks(self, bet_id: str, rows: list[tuple[str, str, int]]) -> int:
+        """rows: (wallet, kind, amount_base). Idempotent: one task per bet and wallet."""
+        created = 0
+        async with self.pool.connection() as conn:
+            for wallet, kind, amount in rows:
+                cur = await conn.execute(
+                    "insert into payout_tasks (bet_id, wallet, kind, amount_base) "
+                    "values (%s, %s, %s, %s) on conflict (bet_id, wallet) do nothing",
+                    (bet_id, wallet, kind, amount),
+                )
+                created += cur.rowcount
+        return created
+
+    async def due_payout_tasks(self, now: datetime, limit: int = 50) -> list[PayoutTask]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                f"select {TASK_COLUMNS} from payout_tasks where status = 'pending' "
+                "and (next_attempt_at is null or next_attempt_at <= %s) order by created_at limit %s",
+                (now, limit),
+            )
+            return [PayoutTask(**r) for r in await cur.fetchall()]
+
+    async def payout_tasks(self, bet_id: str) -> list[PayoutTask]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(f"select {TASK_COLUMNS} from payout_tasks where bet_id = %s order by wallet", (bet_id,))
+            return [PayoutTask(**r) for r in await cur.fetchall()]
+
+    async def get_payout_task(self, task_id: str) -> PayoutTask | None:
+        try:
+            uuid.UUID(str(task_id))
+        except ValueError:
+            return None
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(f"select {TASK_COLUMNS} from payout_tasks where id = %s", (task_id,))
+            row = await cur.fetchone()
+            return PayoutTask(**row) if row else None
+
+    async def task_done(self, task_id: str, amount: int, tx_ref: str | None, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update payout_tasks set status = 'done', amount_base = %s, tx_ref = %s, attempts = attempts + 1, "
+                "last_error = null, next_attempt_at = null, updated_at = %s where id = %s",
+                (amount, tx_ref, at, task_id),
+            )
+
+    async def task_retry_later(self, task_id: str, error: str, next_at: datetime, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update payout_tasks set attempts = attempts + 1, last_error = %s, next_attempt_at = %s, updated_at = %s "
+                "where id = %s",
+                (error[:200], next_at, at, task_id),
+            )
+
+    async def task_failed(self, task_id: str, error: str, at: datetime) -> None:
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "update payout_tasks set status = 'failed', attempts = attempts + 1, last_error = %s, "
+                "next_attempt_at = null, updated_at = %s where id = %s",
+                (error[:200], at, task_id),
+            )
+
+    async def retry_failed_task(self, task_id: str, at: datetime) -> bool:
+        return await self._transition(
+            "update payout_tasks set status = 'pending', attempts = 0, next_attempt_at = %s, updated_at = %s "
+            "where id = %s and status = 'failed'",
+            (at, at, task_id),
+        )
+
+    async def open_task_count(self, bet_id: str) -> int:
+        async with self.pool.connection() as conn:
+            row = await (await conn.execute(
+                "select count(*) from payout_tasks where bet_id = %s and status <> 'done'", (bet_id,)
+            )).fetchone()
+            return int(row[0])
+
+    # provider budget
+
+    async def reserve_provider_call(self, month: str, budget: int) -> bool:
+        """Count one real provider call for the month. False (and nothing counted) once the budget is used up."""
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into provider_usage (month, calls) values (%s, 0) on conflict (month) do nothing", (month,)
+            )
+            cur = await conn.execute(
+                "update provider_usage set calls = calls + 1 where month = %s and calls < %s", (month, budget)
+            )
+            return cur.rowcount == 1
+
+    async def provider_calls_in(self, month: str) -> int:
+        async with self.pool.connection() as conn:
+            row = await (await conn.execute("select calls from provider_usage where month = %s", (month,))).fetchone()
+            return int(row[0]) if row else 0
+
+    # status counts
+
+    async def worker_counts(self) -> dict:
+        async with self.pool.connection() as conn:
+            bets = dict(await (await conn.execute("select status, count(*) from bets group by status")).fetchall())
+            tasks = dict(await (await conn.execute("select status, count(*) from payout_tasks group by status")).fetchall())
+            notices = dict(await (await conn.execute("select status, count(*) from bet_notices group by status")).fetchall())
+            perm = (await (await conn.execute("select count(*) from bet_notices where permanent_failure")).fetchone())[0]
+        return {"bets": bets, "payout_tasks": tasks, "notices": notices, "notices_permanent_failure": int(perm)}
+
     # --- participants (display names) ---
 
     async def set_display_name(self, bet_id: str, wallet: str, name: str) -> None:
@@ -366,19 +562,34 @@ class Repository:
             )).fetchone()
             return row[0], row[1]
 
-    async def mark_notice(self, bet_id: str, kind: str, status: str, error: str | None = None) -> None:
+    async def mark_notice(
+        self, bet_id: str, kind: str, status: str, error: str | None = None, *,
+        next_attempt_at: datetime | None = None, permanent: bool = False,
+    ) -> None:
         async with self.pool.connection() as conn:
             await conn.execute(
                 "update bet_notices set status = %s, attempts = attempts + 1, last_error = %s, "
+                "next_attempt_at = %s, permanent_failure = %s, "
                 "sent_at = case when %s = 'sent' then now() else sent_at end where bet_id = %s and kind = %s",
-                (status, error, status, bet_id, kind),
+                (status, error, next_attempt_at, permanent, status, bet_id, kind),
             )
+
+    async def due_notices(self, now: datetime, max_attempts: int) -> list[dict]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute(
+                "select bet_id::text as bet_id, kind, attempts from bet_notices "
+                "where status in ('pending', 'failed') and not permanent_failure and attempts < %s "
+                "and (next_attempt_at is null or next_attempt_at <= %s) order by created_at",
+                (max_attempts, now),
+            )
+            return list(await cur.fetchall())
 
     async def list_notices(self, bet_id: str) -> list[dict]:
         async with self.pool.connection() as conn:
             cur = conn.cursor(row_factory=dict_row)
             await cur.execute(
-                "select kind, idempotency_key, status, attempts, last_error from bet_notices where bet_id = %s order by kind",
+                "select kind, idempotency_key, status, attempts, last_error, permanent_failure from bet_notices where bet_id = %s order by kind",
                 (bet_id,),
             )
             return list(await cur.fetchall())

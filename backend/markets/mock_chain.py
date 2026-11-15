@@ -181,4 +181,4 @@ class MockChainClient:
                 await cur.execute(
                     "update mock_chain_bets set vault_base = vault_base - %s where bet_id = %s", (payout, bet_id)
                 )
-                return Claim(bet_id, wallet, payout, kind)
+                return Claim(bet_id, wallet, payout, kind, f"mock:{uuid.uuid4()}")

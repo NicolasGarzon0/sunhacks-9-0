@@ -160,6 +160,10 @@ def settings() -> Settings:
         link_signing_secret=SIGNING_SECRET,
         deposit_page_url="https://deposit.test",
         deposit_page_origin="https://deposit.test",
+        worker_enabled=False,
+        settle_confirm_wait_minutes=0,
+        result_poll_start_hours_after_kickoff=0,
+        result_poll_interval_minutes=0,
     )
 
 
@@ -238,3 +242,63 @@ async def provider(repo, clock):
     p = SimulatedProvider(repo, TeamDirectory.from_file(), "America/Phoenix", now=clock, schedule_file=TEST_SCHEDULE)
     await p.seed_if_empty()
     return p
+
+
+# --- worker (chunk 5) ---
+
+from dataclasses import replace as _replace  # noqa: E402
+
+from games.models import GameResult  # noqa: E402
+from markets.worker import Worker  # noqa: E402
+
+
+class ScriptedProvider:
+    """Wraps the simulated provider for lookups; status and results are scripted per test."""
+
+    def __init__(self, inner, name: str = "simulated") -> None:
+        self.inner, self.name = inner, name
+        self.statuses: dict[str, str] = {}
+        self.queue: list[GameResult] = []
+        self.default: GameResult | None = None
+        self.fail: Exception | None = None
+        self.status_calls = 0
+        self.result_calls = 0
+
+    async def find_candidates(self, team, opponent, day):
+        return await self.inner.find_candidates(team, opponent, day)
+
+    async def get_status(self, game_id: str) -> str:
+        self.status_calls += 1
+        return self.statuses.get(game_id, "scheduled")
+
+    async def get_result(self, game_id: str) -> GameResult:
+        self.result_calls += 1
+        if self.fail is not None:
+            raise self.fail
+        if self.queue:
+            return self.queue.pop(0)
+        return self.default or GameResult(game_id, "in_progress", None, None, False)
+
+    def final(self, game_id: str, home: int, away: int) -> None:
+        self.default = GameResult(game_id, "final", home, away, True)
+
+    def set_status(self, game_id: str, status: str) -> None:
+        self.default = GameResult(game_id, status, None, None, False)
+
+
+@pytest.fixture
+def scripted(provider) -> ScriptedProvider:
+    return ScriptedProvider(provider)
+
+
+@pytest.fixture
+def make_worker(repo, market, scripted, settings, logs, clock):
+    def make(**overrides) -> Worker:
+        return Worker(repo, market, scripted, _replace(settings, **overrides), logs.logger, now=clock)
+
+    return make
+
+
+@pytest.fixture
+def worker(make_worker) -> Worker:
+    return make_worker()

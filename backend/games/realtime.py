@@ -104,6 +104,7 @@ class RealtimeSportsProvider:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         base_url: str = BASE_URL,
+        meter=None,
     ) -> None:
         self._key = api_key
         self.tz = tz
@@ -113,6 +114,7 @@ class RealtimeSportsProvider:
         self._sleep = sleep
         self._mono = monotonic
         self.base_url = base_url.rstrip("/")
+        self.meter = meter  # UsageMeter: monthly call budget (None in tests that do not need it)
         self._cache: dict[str, tuple[float, Any]] = {}
         self._lock = asyncio.Lock()  # one call at a time: spacing + no duplicate fetches
         self._last_call = -1e9
@@ -137,6 +139,8 @@ class RealtimeSportsProvider:
                 return hit[1]
             if self._mono() < self._blocked_until:
                 raise ProviderError("rate limited (waiting for Retry-After)")
+            if self.meter is not None and not await self.meter.reserve():
+                raise ProviderError("sports call budget used up for this month")
             wait = MIN_SPACING - (self._mono() - self._last_call)
             if wait > 0:
                 await self._sleep(wait)

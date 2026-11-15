@@ -36,3 +36,16 @@ async def force_settle(repo, market, bet_id: str, winning_side: int):
             (winning_side, cb.fee_paid_base, bet_id),
         )
     return await repo.get_bet(bet_id)
+
+
+async def locked_market(market, provider, repo, chain, rows=((1, 0, 10), (2, 1, 5), (3, 1, 20))):
+    """An open market with deposits, locked through close_funding."""
+    bet = await open_bet(market, provider, repo)
+    await deposits(chain, bet.id, list(rows))
+    bet = await market.close_funding(bet.id)
+    assert bet.status == "locked"
+    return bet
+
+
+def sent(fake_gateway, suffix: str) -> list[dict]:
+    return [s for s in fake_gateway.sends if s["idempotencyKey"].endswith(suffix)]

@@ -1,4 +1,4 @@
-# Handshake Bets backend (chunks 1-3: skeleton, bet extraction, game lookup)
+# Handshake Bets backend (chunks 1-5: skeleton, extraction, game lookup, pool markets, lifecycle worker)
 
 FastAPI service that receives iMessage DMs from the gateway (`../src`, contract in `../docs/imessage-gateway.md`),
 dedups them in Postgres, looks the sender up in a demo roster, and replies through the gateway's `POST /send`.
@@ -149,9 +149,8 @@ Real provider (`GAME_PROVIDER=realtime`, NFL only), `games/realtime.py`:
 - **Selecting it without editing `.env`:** `GAME_PROVIDER=realtime .venv/bin/python -m app`. Process
   environment variables override the `.env` file.
 
-> **Chunk 5 warning, provisional finals:** on the real provider a `final` result can be corrected after it
-> is first reported. Settlement must treat `final` as provisional: wait a few minutes, re-read the
-> result, and settle only if it is unchanged.
+> **Provisional finals:** on the real provider a `final` result can be corrected after it is first reported.
+> The worker (chunk 5) settles only after two matching final reads, see "Settlement rules" below.
 
 ## Pool markets (chunk 4)
 
@@ -177,7 +176,7 @@ times are copied onto the bet at creation, so config changes never touch an open
 locks when both sides have money and at least 2 participants, otherwise refunds (`too_few_participants` or
 `one_sided`). It runs early when `max_participants` is reached (`maybe_close_when_full` after every deposit),
 via `POST /admin/bets/{id}/close_funding`, and lazily when a deposit arrives after `funding_closes_at`
-(no worker yet). Each proposer text goes out once, recorded in `bet_notices` (keys `bet:{id}:link|locked|
+(and by the worker, chunk 5). Each proposer text goes out once, recorded in `bet_notices` (keys `bet:{id}:link|locked|
 refunded|failed`), because the gateway's own idempotency is in memory only.
 
 **Link lifetime.** `DEPOSIT_PAGE_URL/b/<token>`, token = signed bet id (itsdangerous), multi use. Valid while
@@ -205,14 +204,85 @@ the current `status`). API: `BAD_TOKEN` 404, `LINK_EXPIRED` 410, `BAD_REQUEST` /
 `POST /admin/bets/{id}/mark_payouts_complete`, and (simulated provider) `POST /admin/games`
 `{home_id, away_id, minutes_from_now}`.
 
-**Handoff, chunk 5.** The worker must call `close_funding` at `funding_closes_at` (marked `TODO(chunk 5)` in
-`markets/service.py`), retry `bet_notices` rows that are `pending` or `failed`, then at `settle_after` re-read
-the game (finals are provisional), call `chain.settle(winner)` or `refund_all` (`cancelled`, `tie`), trigger
-claims, send the result text, and set `payouts_completed_at` once every position is claimed.
 **Handoff, real chain and deposit page.** Implement `ChainClient` (`markets/chain.py`) against the program and
 wire `build_chain_client`; drop the `mock_chain_*` tables; the page reads `/markets/{t}`, previews via
 `/preview`, signs the deposit itself, then `POST /markets/{t}/participants` for the display name. Names are
 unauthenticated (no wallet signature) until the page adds one.
+
+## Lifecycle worker (chunk 5)
+
+A background asyncio task started in the app lifespan (`WORKER_ENABLED`, default true) runs one tick every
+`WORKER_TICK_SECONDS`. A Postgres advisory transaction lock means only one worker loop runs across app
+instances; a tick that cannot get the lock does nothing. All time based rules use an injected clock. No model
+calls. Every text is a fixed template sent only to the proposer, in `LOCAL_TIMEZONE`, with no hyphens.
+
+```
+DM -> confirm -> game_confirmed -> open ---(funding_closes_at, or full)--> locked --(confirmed final)--> settled
+                                    |  \--(game cancelled / postponed)--> refunded     |  \--(tie, cancelled,
+                                    |  \--(one sided / < 2 people)------> refunded     |     postponed, no result by
+                                    \--(failed to open)--> failed                       |     settle_after)--> refunded
+settled | refunded --> payout tasks (one claim per wallet) --> all done --> payouts_completed_at --> link grace --> 410
+```
+
+One tick, in order, each step idempotent and conditional on the current status:
+a) **Reconcile**: for open and locked bets compare the DB with the chain; a chain that is already locked, settled or
+refunded (a crash between the chain call and the DB write) is recorded, with its notices and tasks.
+b) **Funding**: open bets whose game is cancelled or postponed are refunded; `close_funding` at `funding_closes_at`;
+`maybe_close_when_full` for the rest. The simulated provider is asked every tick; the real one only at the
+deadline (call budget).
+c) **Results**: locked bets are polled from `kickoff + RESULT_POLL_START_HOURS_AFTER_KICKOFF` every
+`RESULT_POLL_INTERVAL_MINUTES`. d) `MarketService.settle_market` settles on the chain, records winner, fee and
+pool, creates winner tasks and queues the result text. e) **Payouts**: due `payout_tasks` run with concurrency 3.
+f) **Notices**: queued texts are sent, transient failures retried.
+
+**Settlement rules.** A final is provisional. The first final read stores score and winner (`result_first_seen_at`);
+the market settles only when a later read reports the same score and winner at least
+`SETTLE_CONFIRM_WAIT_MINUTES` after that first read. A different score or winner, or a status that leaves final,
+restarts the wait. With a wait of 0 (the simulated default) one read is enough. Side 0 = away team, side 1 = home
+team. Equal scores refund everyone (`tie`). No confirmed final by `settle_after` (kickoff +
+`SETTLE_HOURS_AFTER_KICKOFF`) refunds with `no_result`. Fee and payout math come only from `pool_math` and the
+chain client.
+
+**Refund reasons** (`bets.refund_reason`): `one_sided`, `too_few_participants` (chunk 4 text), `cancelled`,
+`postponed`, `tie`, `no_result` (the `refund_result` text). Refunds never charge a fee.
+
+**Payout tasks** (`payout_tasks`, unique per bet and wallet): after settled only winners get a `win` task, after
+refunded every participant gets a `refund` task. `chain.claim` success marks it done with `tx_ref`;
+`ALREADY_CLAIMED` counts as done; `NOT_A_WINNER`, `NOT_FOUND` and `INVALID_WALLET` fail at once; anything else
+retries with `CLAIM_BACKOFF_SECONDS` doubling, and after `CLAIM_MAX_ATTEMPTS` the task is `failed`, an error is
+logged and one `payouts_delayed` text goes to the proposer. When no task is pending or failed the bet gets
+`payouts_completed_at`, which starts the link grace countdown.
+
+**Notices** (`bet_notices`): kinds `link locked refunded failed result refund_result payouts_delayed`, idempotency
+key `bet:{id}:{kind}`. `RATE_LIMITED`, `SEND_FAILED`, `UNREACHABLE` retry with backoff (30 s doubling) up to
+`NOTICE_MAX_ATTEMPTS`; `NOT_ALLOWED` and `BAD_REQUEST` are permanent (`permanent_failure`) and never retried.
+Known gap: if a send times out and is retried after the gateway's 10 minute idempotency window, the proposer could
+get the same text twice.
+
+**Real provider budget.** Every real HTTP call is counted per calendar month (UTC) in `provider_usage`.
+`SPORTS_CALL_BUDGET_MONTHLY` (default 100) caps them; when used up the provider raises, a `rts.budget_exhausted`
+error is logged once, results stop being polled and the `settle_after` rule refunds the market. Lookups get the
+fixed apology meanwhile.
+
+**Env vars** (all optional, in `.env.example`): `WORKER_ENABLED=true`, `WORKER_TICK_SECONDS=15`,
+`RESULT_POLL_START_HOURS_AFTER_KICKOFF=3`, `RESULT_POLL_INTERVAL_MINUTES=10`, `SETTLE_CONFIRM_WAIT_MINUTES=10`
+(the last three default to 0 with `GAME_PROVIDER=simulated`), `SPORTS_CALL_BUDGET_MONTHLY=100`,
+`CLAIM_MAX_ATTEMPTS=8`, `CLAIM_BACKOFF_SECONDS=30`, `NOTICE_MAX_ATTEMPTS=6`, `LINK_GRACE_MINUTES` (overrides
+`LINK_GRACE_HOURS`, for rehearsals). Invalid values stop startup with a clear message. Migration `0006_worker.sql`.
+
+**Worker admin endpoints** (`X-Admin-Secret`): `POST /admin/worker/tick` (one tick now), `GET /admin/worker/status`
+(last tick, bets, tasks and notices per status, permanent notice failures), `POST /admin/payout_tasks/{id}/retry`
+(failed tasks only), `POST /admin/games/{id}/result` `{home_score, away_score}` (simulated; equal scores make a
+tie; `/finish` is the older alias), `POST /admin/games/{id}/status` `{status: scheduled|in_progress|postponed|
+cancelled}` (simulated). `GET /admin/bets/{id}` now lists the payout tasks.
+
+**Handoff notes for the real chain client.**
+- The real contract needs a way to close loser positions on a settled market so their rent is reclaimed (a claim
+  with zero payout, or a close instruction). The mock has no loser claim, so losers get no task today.
+- The worker watches real deposits only through `maybe_close_when_full` and `chain.get_bet`, every tick for every
+  open bet. `RealChainClient` must keep those cheap (cache, or an account read, not a full scan).
+- If a kickoff time changes after a market opens, `funding_closes_at` and `settle_after` are not recomputed.
+- The worker is the only caller of `claim`; a real claim should return its transaction signature as `tx_ref`.
 
 ## Endpoints
 - `POST /inbound` (`X-Gateway-Secret`): 401 bad secret, 400 bad payload, 200 duplicate (no-op), 200 accepted

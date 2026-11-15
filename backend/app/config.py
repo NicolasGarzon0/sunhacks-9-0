@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -61,6 +62,23 @@ class Settings:
     link_grace_hours: int = 2
     funding_minutes_before_kickoff: int = 60
     settle_hours_after_kickoff: int = 6
+    link_grace_minutes: int | None = None  # optional override of link_grace_hours (rehearsals)
+    # worker (chunk 5)
+    worker_enabled: bool = True
+    worker_tick_seconds: int = 15
+    result_poll_start_hours_after_kickoff: float = 3
+    result_poll_interval_minutes: int = 10
+    settle_confirm_wait_minutes: int = 10
+    sports_call_budget_monthly: int = 100
+    claim_max_attempts: int = 8
+    claim_backoff_seconds: int = 30
+    notice_max_attempts: int = 6
+
+    @property
+    def link_grace(self) -> timedelta:
+        if self.link_grace_minutes is not None:
+            return timedelta(minutes=self.link_grace_minutes)
+        return timedelta(hours=self.link_grace_hours)
 
     def __repr__(self) -> str:  # never leak secrets through repr
         return (
@@ -187,6 +205,26 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
     if o.scheme not in ("http", "https") or not o.netloc or o.path not in ("", "/"):
         raise ConfigError("DEPOSIT_PAGE_ORIGIN must be an origin like https://example.com (no path)")
 
+    def boolean(name: str, default: bool) -> bool:
+        raw = get(name)
+        if raw is None:
+            return default
+        if raw.lower() in ("1", "true", "yes", "on"):
+            return True
+        if raw.lower() in ("0", "false", "no", "off"):
+            return False
+        raise ConfigError(f"{name} must be true or false")
+
+    sim = game_provider == "simulated"  # the simulated provider needs no waiting
+    poll_start_raw = get("RESULT_POLL_START_HOURS_AFTER_KICKOFF")
+    try:
+        poll_start = float(poll_start_raw) if poll_start_raw is not None else (0.0 if sim else 3.0)
+    except ValueError:
+        raise ConfigError("RESULT_POLL_START_HOURS_AFTER_KICKOFF must be a number") from None
+    if poll_start < 0:
+        raise ConfigError("RESULT_POLL_START_HOURS_AFTER_KICKOFF must be at least 0")
+    grace_minutes = integer("LINK_GRACE_MINUTES", -1, -1)
+
     log_level = (get("LOG_LEVEL") or "info").lower()
     if log_level not in LOG_LEVELS:
         log_level = "info"
@@ -217,4 +255,14 @@ def load_settings(env: dict[str, str] | None = None, env_file: Path | None = DEF
         link_grace_hours=integer("LINK_GRACE_HOURS", 2, 0),
         funding_minutes_before_kickoff=integer("FUNDING_MINUTES_BEFORE_KICKOFF", 60, 0),
         settle_hours_after_kickoff=integer("SETTLE_HOURS_AFTER_KICKOFF", 6, 1),
+        link_grace_minutes=grace_minutes if grace_minutes >= 0 else None,
+        worker_enabled=boolean("WORKER_ENABLED", True),
+        worker_tick_seconds=integer("WORKER_TICK_SECONDS", 15, 1),
+        result_poll_start_hours_after_kickoff=poll_start,
+        result_poll_interval_minutes=integer("RESULT_POLL_INTERVAL_MINUTES", 0 if sim else 10, 0),
+        settle_confirm_wait_minutes=integer("SETTLE_CONFIRM_WAIT_MINUTES", 0 if sim else 10, 0),
+        sports_call_budget_monthly=integer("SPORTS_CALL_BUDGET_MONTHLY", 100, 0),
+        claim_max_attempts=integer("CLAIM_MAX_ATTEMPTS", 8, 1),
+        claim_backoff_seconds=integer("CLAIM_BACKOFF_SECONDS", 30, 0),
+        notice_max_attempts=integer("NOTICE_MAX_ATTEMPTS", 6, 1),
     )

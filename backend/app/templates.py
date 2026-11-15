@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from games.models import Game
@@ -131,3 +131,55 @@ def market_refunded(bet) -> str:
         "The bet did not have people on both sides, so everyone is refunded. Nothing was charged."
     )
 
+
+
+# --- worker texts (chunk 5), proposer only ---
+
+def grace_label(grace: timedelta) -> str:
+    minutes = int(grace.total_seconds() // 60)
+    if minutes and minutes % 60 == 0:
+        return _hours(minutes // 60)
+    return "a minute" if minutes == 1 else f"{minutes} minutes"
+
+
+def _fee_sentence(fee_paid_base: int, fee_bps: int) -> str:
+    if fee_paid_base == 0:
+        return "There was no fee."
+    return f"The fee was {usd_label(fee_paid_base)}, {bps_label(fee_bps)} of the losing side."
+
+
+def market_result(bet, grace: timedelta) -> str:
+    winner = bet.away_name if bet.winning_side == 0 else bet.home_name
+    score = (
+        f"Final score: {bet.away_name} {bet.result_away_score}, {bet.home_name} {bet.result_home_score}. "
+        if bet.result_away_score is not None and bet.result_home_score is not None else ""
+    )
+    return (
+        f"{score}"
+        f"{winner} wins. The pool was {usd_label(bet.total_pool_base or 0)}. "
+        f"{_fee_sentence(bet.fee_paid_base or 0, bet.fee_bps or 0)} "
+        "Payouts are being sent now. "
+        f"The link stays live for {grace_label(grace)} after payouts finish."
+    )
+
+
+REFUND_REASONS = {
+    "cancelled": "The game was cancelled",
+    "postponed": "The game was postponed",
+    "tie": "The game ended in a tie",
+    "no_result": "There was no final result in time",
+    "one_sided": "The bet did not have people on both sides",
+    "too_few_participants": "The bet did not have people on both sides",
+}
+
+
+def market_refund_result(bet, reason: str, grace: timedelta) -> str:
+    why = REFUND_REASONS.get(reason, "The bet could not be settled")
+    return (
+        f"{why} for {bet.away_name} at {bet.home_name}. "
+        "Every participant is being refunded in full with no fee. "
+        f"The link stays live for {grace_label(grace)} after refunds finish."
+    )
+
+
+PAYOUTS_DELAYED = "Some payouts are taking longer than expected. I am retrying them and will keep trying."

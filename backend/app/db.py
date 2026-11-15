@@ -3,7 +3,7 @@ from __future__ import annotations
 from psycopg_pool import AsyncConnectionPool
 
 
-def make_pool(database_url: str, *, options: str | None = None, max_size: int = 5) -> AsyncConnectionPool:
+def make_pool(database_url: str, *, options: str | None = None, max_size: int = 10) -> AsyncConnectionPool:
     """Create (unopened) pool. prepare_threshold=None keeps it compatible with Supabase's transaction pooler.
 
     `options` lets tests pin a search_path to a throwaway schema.

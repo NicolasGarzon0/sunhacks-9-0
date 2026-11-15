@@ -73,6 +73,7 @@ class Claim:
     wallet: str
     payout_base: int
     kind: str  # "winnings" | "refund"
+    tx_ref: str | None = None
 
 
 class ChainClient(Protocol):

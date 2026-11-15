@@ -18,12 +18,12 @@ HARD_CEILING = timedelta(days=7)
 
 
 class LinkSigner:
-    def __init__(self, secret: str, deposit_page_url: str, grace_hours: int) -> None:
+    def __init__(self, secret: str, deposit_page_url: str, grace) -> None:
         if len(secret) < 32:
             raise ValueError("LINK_SIGNING_SECRET must be at least 32 characters")
         self._ser = URLSafeSerializer(secret, salt=SALT)
         self.base = deposit_page_url.rstrip("/")
-        self.grace = timedelta(hours=grace_hours)
+        self.grace = grace if isinstance(grace, timedelta) else timedelta(hours=grace)
 
     def token(self, bet_id: str) -> str:
         return self._ser.dumps(bet_id)

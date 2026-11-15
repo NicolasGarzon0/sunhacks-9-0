@@ -22,6 +22,11 @@ from .links import LinkSigner
 from .money import MoneyError, format_usd, parse_usd
 from .pool_math import compute_payout, implied_multiplier, preview_payout_for_deposit, settle_amounts
 
+PERMANENT_SEND_CODES = {"NOT_ALLOWED", "BAD_REQUEST"}  # retrying cannot help
+NOTICE_BACKOFF_BASE_S = 30
+NOTICE_BACKOFF_MAX_S = 3600
+SHORT_REFUND_REASONS = ("one_sided", "too_few_participants")  # texted by the chunk 4 'refunded' notice
+
 NAME_MAX = 24
 _URL_RE = re.compile(r"(://|\bwww\.|\b[\w-]{2,}\.[a-z]{2,}\b)", re.IGNORECASE)
 
@@ -98,14 +103,51 @@ class MarketService:
 
     async def notify_once(self, bet: Bet, kind: str, text: str) -> bool:
         key = f"bet:{bet.id}:{kind}"
-        status, _ = await self.repo.ensure_notice(bet.id, kind, key)
+        status, attempts = await self.repo.ensure_notice(bet.id, kind, key)
         if status == "sent":
             return True
+        return await self._deliver(bet, kind, text, key, attempts)
+
+    async def _deliver(self, bet: Bet, kind: str, text: str, key: str, attempts: int) -> bool:
         result = await self.gateway.send_text(bet.proposer_handle, text, key)
-        await self.repo.mark_notice(bet.id, kind, "sent" if result.ok else "failed", None if result.ok else result.code)
-        if not result.ok:
-            self.logger.warn("market.notice_failed", betId=bet.id, kind=kind, code=result.code)
-        return result.ok
+        if result.ok:
+            await self.repo.mark_notice(bet.id, kind, "sent")
+            return True
+        permanent = result.code in PERMANENT_SEND_CODES
+        delay = min(NOTICE_BACKOFF_BASE_S * 2 ** attempts, NOTICE_BACKOFF_MAX_S)
+        await self.repo.mark_notice(
+            bet.id, kind, "failed", result.code,
+            next_attempt_at=None if permanent else self.now() + timedelta(seconds=delay), permanent=permanent,
+        )
+        self.logger.warn("market.notice_failed", betId=bet.id, kind=kind, code=result.code, permanent=permanent)
+        return False
+
+    async def queue_notice(self, bet: Bet, kind: str) -> None:
+        """Record a notice for the worker to send (and retry). The text is rendered at send time."""
+        await self.repo.ensure_notice(bet.id, kind, f"bet:{bet.id}:{kind}")
+
+    async def render_notice(self, bet: Bet, kind: str) -> str:
+        if kind == "link":
+            return T.market_open(bet, self.tz, self.settings.link_grace_hours, self.signer.url(bet.id))
+        if kind == "failed":
+            return T.MARKET_FAILED
+        if kind == "locked":
+            return T.market_locked(bet, (await self.chain.get_bet(bet.id)).side_totals)
+        if kind == "refunded":
+            return T.market_refunded(bet)
+        if kind == "result":
+            return T.market_result(bet, self.settings.link_grace)
+        if kind == "refund_result":
+            return T.market_refund_result(bet, bet.refund_reason or "", self.settings.link_grace)
+        if kind == "payouts_delayed":
+            return T.PAYOUTS_DELAYED
+        raise ValueError(f"unknown notice kind {kind}")
+
+    async def send_queued_notice(self, bet_id: str, kind: str, attempts: int) -> bool:
+        bet = await self.repo.get_bet(bet_id)
+        if bet is None:
+            return False
+        return await self._deliver(bet, kind, await self.render_notice(bet, kind), f"bet:{bet.id}:{kind}", attempts)
 
     # --- opening ---
 
@@ -185,7 +227,7 @@ class MarketService:
         """Lock the market when both sides have money and there are at least 2 participants, else refund everyone.
 
         Idempotent and serialized per bet: a call on a market that is not open changes nothing.
-        TODO(chunk 5): the background worker calls this at funding_closes_at and retries pending notices.
+        The worker calls this at funding_closes_at.
         """
         async with self._lock_for(bet_id):
             bet = await self.repo.get_bet(bet_id)
@@ -208,11 +250,15 @@ class MarketService:
                     fresh = await self.repo.get_bet(bet.id)
                     await self.notify_once(fresh, "locked", T.market_locked(fresh, cb.side_totals))
             elif cb.state == "refunded":
-                reason = "too_few_participants" if cb.participant_count < 2 else "one_sided"
+                reason = bet.refund_reason or ("too_few_participants" if cb.participant_count < 2 else "one_sided")
                 if await self.repo.refund_bet(bet.id, reason, cb.total_pool_base, at):
                     self.logger.info("market.refunded", betId=bet.id, reason=reason, participants=cb.participant_count)
                     fresh = await self.repo.get_bet(bet.id)
-                    await self.notify_once(fresh, "refunded", T.market_refunded(fresh))
+                    await self.ensure_payout_tasks(fresh)
+                    if reason in SHORT_REFUND_REASONS:
+                        await self.notify_once(fresh, "refunded", T.market_refunded(fresh))
+                    else:  # a refund that was already decided (for example a cancelled game) before the chain call finished
+                        await self.queue_notice(fresh, "refund_result")
             else:
                 self.logger.error("market.close_unexpected_state", betId=bet.id, chainState=cb.state)
             return await self.repo.get_bet(bet.id)
@@ -227,6 +273,68 @@ class MarketService:
             self.logger.info("market.full", betId=bet.id, participants=cb.participant_count)
             return await self.close_funding(bet.id)
         return bet
+
+    async def refund_market(self, bet_id: str, reason: str) -> Bet:
+        """Refund everyone with no fee from open or locked. Safe to call twice and after a crash."""
+        async with self._lock_for(bet_id):
+            bet = await self.repo.get_bet(bet_id)
+            if bet is None:
+                raise MarketError("NOT_FOUND", "unknown bet")
+            if bet.status not in ("open", "locked"):
+                return bet
+            await self.repo.set_refund_intent(bet.id, reason)
+            cb = await self.chain.get_bet(bet.id)
+            if cb.state in ("open", "locked"):
+                cb = await self.chain.refund_all(bet.id)
+            if cb.state != "refunded":
+                raise MarketError("WRONG_STATE", f"chain is {cb.state}; cannot refund")
+            fresh = await self.repo.get_bet(bet.id)
+            final_reason = fresh.refund_reason or reason
+            if await self.repo.refund_bet(bet.id, final_reason, cb.total_pool_base, self.now()):
+                self.logger.info("market.refunded", betId=bet.id, reason=final_reason, participants=cb.participant_count)
+                fresh = await self.repo.get_bet(bet.id)
+                await self.ensure_payout_tasks(fresh)
+                await self.queue_notice(fresh, "refunded" if final_reason in SHORT_REFUND_REASONS else "refund_result")
+            return await self.repo.get_bet(bet.id)
+
+    async def settle_market(self, bet_id: str, winning_side: int) -> Bet:
+        """Settle a locked market on the chain, record it, create winner tasks, queue the result text. Safe twice."""
+        async with self._lock_for(bet_id):
+            bet = await self.repo.get_bet(bet_id)
+            if bet is None:
+                raise MarketError("NOT_FOUND", "unknown bet")
+            if bet.status == "settled":
+                return bet
+            if bet.status != "locked":
+                raise MarketError("WRONG_STATE", f"market is {bet.status}")
+            cb = await self.chain.get_bet(bet.id)
+            if cb.state == "locked":
+                cb = await self.chain.settle(bet.id, winning_side)
+            if cb.state != "settled":
+                raise MarketError("WRONG_STATE", f"chain is {cb.state}; cannot settle")
+            if await self.repo.settle_bet(bet.id, cb.winning_side, cb.fee_paid_base, cb.total_pool_base, self.now()):  # type: ignore[arg-type]
+                self.logger.info("market.settled", betId=bet.id, winningSide=cb.winning_side, fee=cb.fee_paid_base, pool=cb.total_pool_base)
+                fresh = await self.repo.get_bet(bet.id)
+                await self.ensure_payout_tasks(fresh)
+                await self.queue_notice(fresh, "result")
+            return await self.repo.get_bet(bet.id)  # type: ignore[return-value]
+
+    async def ensure_payout_tasks(self, bet: Bet) -> int:
+        """One task per wallet that is owed money: winners after settled, everyone after refunded. Idempotent."""
+        if bet.status not in ("settled", "refunded"):
+            return 0
+        cb = await self.chain.get_bet(bet.id)
+        positions = await self.chain.get_positions(bet.id)
+        rows: list[tuple[str, str, int]] = []
+        if cb.state == "refunded":
+            rows = [(p.wallet, "refund", p.amount_base) for p in positions]
+        elif cb.state == "settled":
+            ws = cb.winning_side
+            rows = [
+                (p.wallet, "win", compute_payout(p.amount_base, cb.distributable_base, cb.side_totals[ws]))  # type: ignore[index]
+                for p in positions if p.side == ws
+            ]
+        return await self.repo.create_payout_tasks(bet.id, rows)
 
     def funding_has_closed(self, bet: Bet) -> bool:
         return bet.funding_closes_at is not None and self.now() >= bet.funding_closes_at
@@ -427,6 +535,7 @@ class MarketService:
             "chain": None if cb is None else {**cb.__dict__, "side_totals": list(cb.side_totals)},
             "positions": [p.__dict__ for p in positions],
             "notices": await self.repo.list_notices(bet.id),
+            "payout_tasks": [t.__dict__ for t in await self.repo.payout_tasks(bet.id)],
             "link": self.signer.url(bet.id),
             "link_expires_at": _iso(self.signer.expires_at(bet)),
         }
