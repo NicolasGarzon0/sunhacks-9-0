@@ -1,4 +1,4 @@
-# textbet
+# TextBet
 
 Text an AI agent a game, get a betting link, share it with friends. Solana escrow holds the money and pays the winners automatically.
 
