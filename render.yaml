@@ -19,8 +19,8 @@ services:
         value: 22.16.0
       - key: PORT
         value: "10000"
-      - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
+      - key: SOLANA_RPC_URL # dedicated devnet RPC URL with an API key, so a secret
+        sync: false
       - key: PROGRAM_ID
         value: 38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE # contracts/devnet.json
       - key: TEST_USDC_MINT
@@ -58,6 +58,8 @@ services:
       - key: GAME_PROVIDER
         value: realtime
       - key: AIRDROP_ENABLED
+        value: "true"
+      - key: TRUST_PROXY_HEADERS
         value: "true"
       - key: TREASURY_PUBKEY
         value: GiAL8s2at8zKmsMqisRVpzuaciJfL1c7R7tcfzg4ejjC # contracts/devnet.json
