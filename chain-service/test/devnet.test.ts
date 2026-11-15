@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { Keypair } from "@solana/web3.js";
 import { ChainService } from "../src/chain.ts";
 import { loadConfig } from "../src/config.ts";
 import { createLogger } from "../src/logger.ts";
@@ -29,7 +30,7 @@ test("devnet: create, deposit x2, lock, settle, claim, close_loser_position, clo
   const bet: any = await chain.getBet(id);
   assert.deepEqual(bet.side_totals, [4_000_000, 6_000_000]);
   assert.equal(bet.participant_count, 2);
-  const pos: any = await chain.positions(id);
+  const pos: any = await chain.positions(id, [a.wallet, b.wallet, Keypair.generate().publicKey.toBase58()]);
   assert.equal(pos.positions.length, 2);
 
   assert.equal(((await chain.lock(id)) as any).already, false);

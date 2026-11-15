@@ -1,5 +1,6 @@
+import assert from "node:assert/strict";
 import anchor from "@anchor-lang/core";
-import { Keypair, PublicKey, VersionedTransaction, type GetProgramAccountsFilter } from "@solana/web3.js";
+import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { ChainService } from "../src/chain.ts";
 import type { ChainConfig } from "../src/config.ts";
 import { createLogger } from "../src/logger.ts";
@@ -38,15 +39,11 @@ export class FakeRpc implements Rpc {
   constructor(public programId: PublicKey) {}
   async getGenesisHash() { return "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"; }
   async getAccount(pk: PublicKey) { return this.accounts.get(pk.toBase58()) ?? null; }
-  async getProgramAccounts(programId: PublicKey, filters: GetProgramAccountsFilter[]) {
-    return [...this.accounts.entries()]
-      .filter(([, a]) => a.owner.equals(programId))
-      .filter(([, a]) => filters.every((f: any) => {
-        if (f.dataSize !== undefined) return a.data.length === f.dataSize;
-        const want = new PublicKey(f.memcmp.bytes).toBuffer();
-        return a.data.subarray(f.memcmp.offset, f.memcmp.offset + want.length).equals(want);
-      }))
-      .map(([k, a]) => ({ pubkey: new PublicKey(k), data: a.data }));
+  multipleReads: number[] = []; // batch size of every getMultipleAccounts call
+  async getMultipleAccounts(pks: PublicKey[]) {
+    assert.ok(pks.length <= 100, "getMultipleAccounts takes at most 100 keys");
+    this.multipleReads.push(pks.length);
+    return pks.map((pk) => this.accounts.get(pk.toBase58()) ?? null);
   }
   async getTokenBalance(pk: PublicKey) { return this.tokens.get(pk.toBase58()) ?? 0n; }
   async getBalance(pk: PublicKey) { return this.balances.get(pk.toBase58()) ?? 1_000_000_000; }

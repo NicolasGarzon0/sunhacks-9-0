@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as ed from "@noble/ed25519";
-import { CUTOFF_MS, formatCountdown, msLeft, phase } from "../src/lib/countdown";
+import { CUTOFF_MS, clockOffsetMs, formatCountdown, msLeft, phase } from "../src/lib/countdown";
 import { DOCUMENTED_CODES, ERROR_COPY, UNKNOWN_COPY, errorCopy } from "../src/lib/errors";
 import { base58Decode, base58Encode, formatKickoff, fromBase64, hueFor, initials, shortAddr, toBase64 } from "../src/lib/format";
 import { formatBase, parseAmount, sharePercent } from "../src/lib/money";
@@ -56,6 +56,18 @@ describe("countdown", () => {
   it("computes ms left", () => {
     expect(msLeft("2026-01-01T00:01:00Z", Date.parse("2026-01-01T00:00:00Z"))).toBe(60_000);
     expect(msLeft("garbage", 1)).toBe(0);
+  });
+  it("offsets the clock by server_time minus the local time at fetch", () => {
+    const local = Date.parse("2026-01-01T00:00:00Z");
+    expect(clockOffsetMs("2026-01-01T00:10:00.000Z", local)).toBe(600_000); // the server is 10 minutes ahead
+    expect(clockOffsetMs("2025-12-31T23:59:30.250Z", local)).toBe(-29_750); // behind, with milliseconds
+    expect(clockOffsetMs("2026-01-01T00:00:00.123456Z", local)).toBe(123); // microseconds from an older server are fine
+    expect(clockOffsetMs(undefined, local)).toBe(0); // an older backend: fall back to the browser clock
+    expect(clockOffsetMs("garbage", local)).toBe(0);
+    // a browser one hour behind still counts down the server's 90 s, not the browser's 1 h 01 m
+    const server = Date.parse("2026-01-01T00:10:00Z");
+    const off = clockOffsetMs("2026-01-01T00:10:00Z", server - 3_600_000);
+    expect(msLeft("2026-01-01T00:11:30Z", server - 3_600_000 + off)).toBe(90_000);
   });
 });
 

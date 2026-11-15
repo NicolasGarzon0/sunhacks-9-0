@@ -53,8 +53,12 @@ test("errors are {ok:false, code, detail}; reads and writes route to the service
   r = await call("POST", `/bets/${BET_ID}/claim`, { wallet: Keypair.generate().publicKey.toBase58() });
   assert.equal(r.status, 409); // bet is open: WRONG_STATE
   assert.equal(((await r.json()) as any).code, "WRONG_STATE");
-  r = await call("GET", `/bets/${BET_ID}/positions`);
+  r = await call("POST", `/bets/${BET_ID}/positions`, { depositors: [Keypair.generate().publicKey.toBase58()] });
   assert.equal(((await r.json()) as any).positions.length, 0);
+  r = await call("POST", `/bets/${BET_ID}/positions`, {}); // the depositor list is required
+  assert.equal(r.status, 400);
+  assert.equal(((await r.json()) as any).code, "BAD_REQUEST");
+  assert.equal((await call("GET", `/bets/${BET_ID}/positions`)).status, 404); // no scan of the program any more
   r = await call("GET", "/nope");
   assert.equal(r.status, 404);
   await close();

@@ -11,7 +11,7 @@ import pytest
 from app import templates as T
 
 from .conftest import ADMIN_SECRET
-from .helpers import ALICE, deposits, open_bet, w
+from .helpers import deposit_known, ALICE, deposits, open_bet, w
 
 ADMIN = {"X-Admin-Secret": ADMIN_SECRET}
 
@@ -92,9 +92,9 @@ async def test_early_close_two_sided_full_market_locks_on_the_last_participant(m
     bet = await full_market(market, provider, repo)
     assert bet.max_participants == 4
     for n, side in [(1, 0), (2, 1), (3, 0)]:
-        await chain.deposit(bet.id, w(n), side, 5_000_000)
+        await deposit_known(chain, bet.id, w(n), side, 5_000_000)
         assert (await market.maybe_close_when_full(bet.id)).status == "open"  # below the cap: nothing happens
-    await chain.deposit(bet.id, w(4), 1, 5_000_000)
+    await deposit_known(chain, bet.id, w(4), 1, 5_000_000)
     closed = await market.maybe_close_when_full(bet.id)
     assert closed.status == "locked" and len(texts(fake_gateway, ":locked")) == 1
     assert (await market.maybe_close_when_full(bet.id)).status == "locked"  # repeated call: no change

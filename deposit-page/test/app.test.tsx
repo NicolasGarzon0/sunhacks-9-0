@@ -95,6 +95,34 @@ describe("status views", () => {
     expect(screen.getByText("Test money on devnet. Fees are sponsored.")).toBeInTheDocument();
   });
 
+  it("the countdown follows the server clock, not a wrong browser clock", async () => {
+    // the server is one hour ahead of this browser; betting closes 90 s after the server's now
+    const serverNow = Date.now() + 3_600_000;
+    api.market.mockResolvedValue(market({
+      server_time: new Date(serverNow).toISOString(), funding_closes_at: new Date(serverNow + 90_000).toISOString(),
+    }));
+    renderBet();
+    await openForm();
+    expect(screen.getByTestId("countdown").textContent).toMatch(/^1m \d\ds$/); // the browser clock alone would say "1h 01m"
+  });
+
+  it("a browser clock that is behind cannot keep betting open after the server has closed it", async () => {
+    const serverNow = Date.now() + 3_600_000;
+    api.market.mockResolvedValue(market({
+      server_time: new Date(serverNow).toISOString(), funding_closes_at: new Date(serverNow - 5_000).toISOString(),
+    }));
+    renderBet();
+    await openForm();
+    expect(screen.getByTestId("countdown").textContent).toBe("Closed"); // the browser clock alone would count down 55 minutes
+  });
+
+  it("without server_time (an older backend) the page falls back to the browser clock", async () => {
+    api.market.mockResolvedValue(market({ funding_closes_at: new Date(Date.now() + 90_000).toISOString() }));
+    renderBet();
+    await openForm();
+    expect(screen.getByTestId("countdown").textContent).toMatch(/^1m \d\ds$/);
+  });
+
   it("locked: waiting for the game, final pools, your position", async () => {
     api.market.mockResolvedValue(market({ status: "locked", game_pending: true }));
     api.position.mockResolvedValue(position({ has_position: true, side: 1, stake_base: 5e6, stake_usd: "5.00" }));

@@ -439,3 +439,52 @@ async def test_a_mint_is_never_repeated_after_the_service_answered(make_real):
         await c.airdrop(w(1), 5 * USDC)
     assert len(calls) == 1
     await http.aclose()
+
+
+# ---------------- no program scan: the backend names the wallets it wants read ----------------
+
+async def test_deposit_tx_reads_only_the_depositing_wallet_not_the_whole_program(make_real):
+    r = await make_real()
+    for n in (1, 2):
+        await r.fund(n)
+    await submit(r, 1, 0, "5")
+    r.fake.positions_requests.clear()
+    assert (await tx(r, 2, 1, "4")).status_code == 200
+    assert r.fake.positions_requests == [[w(2)]]
+
+
+async def test_a_depositor_without_a_name_is_still_listed_and_snapshotted(make_real):
+    r = await make_real()
+    for n in (1, 2):
+        await r.fund(n)
+    await submit(r, 1, 0, "5")  # no display name: the wallet is known from the submit alone
+    await submit(r, 2, 1, "5")
+    assert await r.repo.participant_wallets(r.bet.id) == [w(1), w(2)]
+    listing = (await r.get("/participants")).json()["participants"]
+    assert {p["wallet"] for p in listing} == {w(1), w(2)} and all(p["display_name"] is None for p in listing)
+    assert r.fake.positions_requests[-1] == [w(1), w(2)]
+    await r.market.close_funding(r.bet.id)
+    assert {s.wallet for s in await r.repo.snapshots(r.bet.id)} == {w(1), w(2)}
+
+
+async def test_the_wallet_is_recorded_before_the_deposit_is_sent_so_a_lost_answer_loses_nothing(make_real):
+    r = await make_real()
+    await r.fund(1)
+    r.fake.broken["POST submit"] = 10  # the service keeps failing: the deposit may or may not have landed
+    res = await submit(r, 1, 0, "5")
+    assert res.status_code >= 400
+    assert await r.repo.participant_wallets(r.bet.id) == [w(1)]
+
+
+async def test_a_bad_wallet_is_never_recorded(make_real):
+    r = await make_real()
+    res = await r.post("/deposit_submit", {"wallet": "nope", "side": 0, "amount_usd": "5", "message_b64": "x", "user_signature_b64": "y"})
+    assert res.status_code == 400
+    assert await r.repo.participant_wallets(r.bet.id) == []
+
+
+async def test_the_market_in_a_submit_response_carries_the_server_time(make_real):
+    r = await make_real()
+    await r.fund(1)
+    res = await submit(r, 1, 0, "5")
+    assert res.json()["market"]["server_time"].endswith("Z")

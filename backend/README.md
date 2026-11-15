@@ -295,7 +295,7 @@ mode), `TREASURY_PUBKEY` (required; must equal the chain service's, which reject
 - **Mock parity** (`markets/mock_chain.py`, see `contracts/README.md` for the full list): lock needs both sides and 2
   participants; deposits stop at `funding_closes_at` in the contract's error order; lock and settle stop at `refund_after`;
   claiming closes the position (a second claim, or a claim for a wallet with no position, is `ALREADY_CLAIMED`); losing positions
-  stay until `close_loser_position` (no transfer); `get_positions` lists open positions only; `close_bet` sweeps the dust and
+  stay until `close_loser_position` (no transfer); `get_positions(bet_id, depositors)` lists the open positions of the named wallets only (the real chain never scans the program: it derives each Position PDA and batch-reads them; the backend passes `bet_participants`, which every deposit fills before it is sent); `close_bet` sweeps the dust and
   makes later reads `NOT_FOUND`; `emergency_refund` (anyone at or after `refund_after`) exists on the mock for tests.
   `tests/test_chain_parity.py` runs the same scenarios against the mock and against `RealChainClient` over a fake chain service
   (`tests/fake_chain_service.py`); `tests/test_real_chain.py` covers mapping and retries.

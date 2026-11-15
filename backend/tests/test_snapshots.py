@@ -14,7 +14,7 @@ import pytest
 from markets.chain import ChainError
 
 from .conftest import ADMIN_SECRET
-from .helpers import USDC, deposits, locked_market, open_bet, w
+from .helpers import deposit_known, USDC, deposits, locked_market, open_bet, w
 from .test_close_funding import ADMIN
 
 MIN = timedelta(minutes=1)
@@ -45,7 +45,7 @@ async def test_a_deposit_that_lands_just_before_the_lock_is_in_the_snapshot(mark
     real_lock = chain.lock
 
     async def lock_after_a_late_deposit(bet_id):
-        await chain.deposit(bet_id, w(3), 1, 7 * USDC)  # slips in after the first snapshot, before the lock
+        await deposit_known(chain, bet_id, w(3), 1, 7 * USDC)  # slips in after the first snapshot, before the lock
         return await real_lock(bet_id)
 
     chain.lock = lock_after_a_late_deposit  # type: ignore[method-assign]
@@ -122,7 +122,7 @@ async def test_views_of_a_finished_market_come_from_snapshots_after_the_position
     clock.current = bet.kickoff_utc + 60 * MIN
     scripted.final(bet.game_id, 21, 14)
     await worker.tick()
-    assert await chain.get_positions(bet.id) == []  # every position was claimed or closed on the chain
+    assert await chain.get_positions(bet.id, [w(1), w(2), w(3)]) == []  # every position was claimed or closed on the chain
     code, view = await get(client, token)
     assert code == 200 and view["status"] == "settled" and view["participant_count"] == 3
     assert view["pools"]["side0_base"] == 10 * USDC and view["pools"]["side1_base"] == 25 * USDC
@@ -142,7 +142,7 @@ async def test_refunded_views_come_from_snapshots(worker, client, market, provid
     clock.current = bet.kickoff_utc + 60 * MIN
     scripted.set_status(bet.game_id, "cancelled")
     await worker.tick()
-    assert await chain.get_positions(bet.id) == []
+    assert await chain.get_positions(bet.id, [w(1), w(2), w(3)]) == []
     code, view = await get(client, token)
     assert view["status"] == "refunded" and view["participant_count"] == 3 and view["total_pool_base"] == 35 * USDC
     code, pos = await get(client, token, "/position", wallet=w(2))

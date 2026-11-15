@@ -9,6 +9,8 @@ export interface MarketView {
   teams: { side0: Team; side1: Team };
   kickoff_utc: string;
   funding_closes_at: string;
+  /** the server clock, ISO UTC. Optional only so an older backend still works: the page then falls back to the browser clock. */
+  server_time?: string;
   pools: { side0_base: number; side1_base: number; side0_usd: string; side1_usd: string };
   total_pool_base: number;
   total_pool_usd: string;

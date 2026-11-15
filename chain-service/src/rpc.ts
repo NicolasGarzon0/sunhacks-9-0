@@ -1,9 +1,12 @@
 // The only module that talks to the network. Everything else uses the Rpc interface so tests can inject a fake.
-import { Connection, PublicKey, SYSVAR_CLOCK_PUBKEY, VersionedTransaction, type GetProgramAccountsFilter } from "@solana/web3.js";
+import { Connection, PublicKey, SYSVAR_CLOCK_PUBKEY, VersionedTransaction } from "@solana/web3.js";
 import { ChainError } from "./errors.ts";
 import type { Logger } from "./logger.ts";
 
 export const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+
+/** getMultipleAccounts accepts at most 100 keys per request */
+export const MAX_MULTIPLE_ACCOUNTS = 100;
 
 export interface AccountData { data: Buffer; lamports: number; owner: PublicKey }
 export interface TxOutcome { err: unknown | null; logs: string[] }
@@ -11,7 +14,8 @@ export interface TxOutcome { err: unknown | null; logs: string[] }
 export interface Rpc {
   getGenesisHash(): Promise<string>;
   getAccount(pk: PublicKey): Promise<AccountData | null>;
-  getProgramAccounts(programId: PublicKey, filters: GetProgramAccountsFilter[]): Promise<{ pubkey: PublicKey; data: Buffer }[]>;
+  /** one batched read (at most MAX_MULTIPLE_ACCOUNTS keys per call); null for an account that does not exist. Same order as `pks`. */
+  getMultipleAccounts(pks: PublicKey[]): Promise<(AccountData | null)[]>;
   getTokenBalance(pk: PublicKey): Promise<bigint>;
   getBalance(pk: PublicKey): Promise<number>;
   getLatestBlockhash(): Promise<string>;
@@ -57,9 +61,11 @@ export class ConnectionRpc implements Rpc {
     const a = await this.r("getAccount", () => this.conn.getAccountInfo(pk, "confirmed"));
     return a ? { data: Buffer.from(a.data), lamports: a.lamports, owner: a.owner } : null;
   }
-  async getProgramAccounts(programId: PublicKey, filters: GetProgramAccountsFilter[]) {
-    const res = await this.r("getProgramAccounts", () => this.conn.getProgramAccounts(programId, { commitment: "confirmed", filters }));
-    return res.map((x) => ({ pubkey: x.pubkey, data: Buffer.from(x.account.data) }));
+  async getMultipleAccounts(pks: PublicKey[]): Promise<(AccountData | null)[]> {
+    if (pks.length > MAX_MULTIPLE_ACCOUNTS) throw new ChainError("INVALID_PARAMS", `at most ${MAX_MULTIPLE_ACCOUNTS} accounts per read`);
+    if (pks.length === 0) return [];
+    const res = await this.r("getMultipleAccounts", () => this.conn.getMultipleAccountsInfo(pks, "confirmed"));
+    return res.map((a) => (a ? { data: Buffer.from(a.data), lamports: a.lamports, owner: a.owner } : null));
   }
   async getTokenBalance(pk: PublicKey): Promise<bigint> {
     try {

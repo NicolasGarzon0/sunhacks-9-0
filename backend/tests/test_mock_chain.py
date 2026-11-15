@@ -115,7 +115,7 @@ async def test_lock_settle_claim_leaves_only_dust_and_treasury_gets_the_fee(mock
     assert done.vault_base == 67_500_000 - c3.payout_base - c4.payout_base == 1  # one base unit of dust
     assert done.treasury_balance_base == done.fee_paid_base == 1_500_000
     # claimed positions are gone like on chain; only the losers' positions are still open
-    assert {p.wallet for p in await mock.get_positions(bet_id)} == {w(1), w(2)}
+    assert {p.wallet for p in await mock.get_positions(bet_id, [w(n) for n in range(1, 5)])} == {w(1), w(2)}
     assert done.positions_open == 2
 
 
@@ -166,7 +166,7 @@ async def test_state_persists_across_a_fresh_client(repo, mock, bet_id):
     fresh = MockChainClient(repo.pool)
     cb = await fresh.get_bet(bet_id)
     assert cb.state == "locked" and cb.side_totals == (30 * USDC, 39 * USDC) and cb.participant_count == 4
-    assert len(await fresh.get_positions(bet_id)) == 4
+    assert len(await fresh.get_positions(bet_id, [w(n) for n in range(1, 5)])) == 4
 
 
 async def test_factory(repo, settings):

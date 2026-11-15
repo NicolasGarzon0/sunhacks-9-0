@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Sequence
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -79,12 +80,17 @@ class MockChainClient:
             cur = conn.cursor(row_factory=dict_row)
             return _bet(*await self._load(cur, bet_id))
 
-    async def get_positions(self, bet_id: str) -> list[Position]:
-        """Open positions only, like the chain: a claimed or closed position account no longer exists."""
+    async def get_positions(self, bet_id: str, depositors: Sequence[str]) -> list[Position]:
+        """Open positions of `depositors` only, like the chain: a claimed or closed position account no longer exists,
+        and the real chain reads exactly the wallets it is told about."""
+        if not all(is_valid_wallet(w) for w in depositors):
+            raise ChainError("INVALID_WALLET", "depositor is not a valid public key")
+        wanted = set(depositors)
         async with self.pool.connection() as conn:
             cur = conn.cursor(row_factory=dict_row)
             _, positions = await self._load(cur, bet_id)
-            return [Position(**{**p, "claimed": False, "payout_base": 0, "closed": False}) for p in positions if not p["closed"]]
+            return [Position(**{**p, "claimed": False, "payout_base": 0, "closed": False})
+                    for p in positions if not p["closed"] and p["wallet"] in wanted]
 
     async def health(self) -> dict | None:
         return None

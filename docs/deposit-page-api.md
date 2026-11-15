@@ -32,12 +32,19 @@ The market. `status` is `open | locked | settled | refunded | failed`. Important
 { "ok": true, "bet_id": "…", "status": "open", "league": "nfl",
   "teams": { "side0": { "name": "Seattle Seahawks", "role": "away" }, "side1": { "name": "Arizona Cardinals", "role": "home" } },
   "kickoff_utc": "2026-11-15T21:05:00Z", "funding_closes_at": "2026-11-15T20:05:00Z",
+  "server_time": "2026-11-15T19:41:07.412Z",
   "pools": { "side0_base": 12000000, "side1_base": 15250000, "side0_usd": "12.00", "side1_usd": "15.25" },
   "total_pool_usd": "27.25", "participant_count": 4,
   "limits": { "min_stake_usd": "1.00", "max_stake_usd": "20.00", "max_participants": 20 },
   "fee_bps": 500, "fee_line": "A 5% fee on the losing side covers operating costs.",
   "multipliers": { "side0": "2.27", "side1": "1.95" } }
 ```
+
+`server_time` is the server's clock (ISO UTC, millisecond precision) at the moment the view was built. Do not count down to
+`funding_closes_at` with the browser clock alone: a phone that is a few minutes off would show the wrong time, or allow a deposit the server
+will refuse. Keep `offset = server_time - local_time_at_fetch` (take the local time at the middle of the request, or when the response
+arrives) and use `Date.now() + offset` as "now"; refresh the offset on every poll. If `server_time` is missing, use offset 0. The
+market object inside a `deposit_submit` response carries `server_time` too.
 
 `side 0` is the away team, `side 1` the home team. `multipliers` are the payout per 1 staked if that side wins, net of the fee, from the
 current pool (null once refunded). Also `GET /markets/{token}/participants` (`[{wallet, side, stake_base, stake_usd, display_name}]`)

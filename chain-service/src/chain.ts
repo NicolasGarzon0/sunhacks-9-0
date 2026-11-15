@@ -4,9 +4,11 @@ import type { ChainConfig } from "./config.ts";
 import { ChainError, mapLogs, toChainError } from "./errors.ts";
 import type { Logger } from "./logger.ts";
 import { POSITION_SIZE, Pool, uuidBytes, type BetData, type PositionData } from "./program.ts";
-import type { Rpc } from "./rpc.ts";
+import { MAX_MULTIPLE_ACCOUNTS, type Rpc } from "./rpc.ts";
 
 const BPS = 10_000n;
+/** upper bound on the wallets one positions request may name (a bet holds at most 100 participants; the rest is slack for wallets that never deposited) */
+export const MAX_DEPOSITORS = 1000;
 const MAX_JS = BigInt(Number.MAX_SAFE_INTEGER);
 
 export type Json = Record<string, unknown>;
@@ -104,21 +106,46 @@ export class ChainService {
     return this.view(bet, { vault_base: num(vault), treasury_balance_base: num(treasury) });
   }
 
-  private async readPositions(pda: PublicKey): Promise<{ pubkey: PublicKey; pos: PositionData }[]> {
-    const rows = await this.rpc.getProgramAccounts(this.cfg.programId, [
-      { dataSize: POSITION_SIZE },
-      { memcmp: { offset: 8, bytes: pda.toBase58() } },
-    ]);
+  /**
+   * The open positions of `depositors` in this bet. Never scans the program (no program-wide account query): each Position PDA is
+   * derived from ["position", bet, depositor] and read with getMultipleAccounts in batches. A depositor with no open
+   * position (never deposited, claimed, or closed) is simply absent from the answer.
+   */
+  private async readPositions(pda: PublicKey, depositors: PublicKey[]): Promise<{ pubkey: PublicKey; pos: PositionData }[]> {
+    const keys = depositors.map((d) => ({ depositor: d, pda: this.pool.posPda(pda, d) }));
     const disc = this.pool.positionDiscriminator;
-    return rows
-      .filter((r) => r.data.subarray(0, 8).equals(disc))
-      .map((r) => ({ pubkey: r.pubkey, pos: this.pool.decodePosition(r.data) }))
-      .sort((a, b) => a.pos.owner.toBase58().localeCompare(b.pos.owner.toBase58()));
+    const out: { pubkey: PublicKey; pos: PositionData }[] = [];
+    for (let i = 0; i < keys.length; i += MAX_MULTIPLE_ACCOUNTS) {
+      const batch = keys.slice(i, i + MAX_MULTIPLE_ACCOUNTS);
+      const accounts = await this.rpc.getMultipleAccounts(batch.map((k) => k.pda));
+      batch.forEach((k, j) => {
+        const acc = accounts[j];
+        if (!acc || !acc.owner.equals(this.cfg.programId) || acc.data.length !== POSITION_SIZE || !acc.data.subarray(0, 8).equals(disc)) return;
+        const pos = this.pool.decodePosition(acc.data);
+        if (!pos.bet.equals(pda) || !pos.owner.equals(k.depositor)) return; // cannot happen for a PDA this program made; never trust it blindly
+        out.push({ pubkey: k.pda, pos });
+      });
+    }
+    return out.sort((a, b) => a.pos.owner.toBase58().localeCompare(b.pos.owner.toBase58()));
   }
 
-  async positions(betId: string): Promise<Json> {
+  /** `depositors` comes from the caller (the backend's participants table): a list of base58 wallets, deduplicated here. */
+  async positions(betId: string, depositors: unknown): Promise<Json> {
+    if (!Array.isArray(depositors)) throw new ChainError("BAD_REQUEST", "depositors must be an array of wallet public keys");
+    if (depositors.length > MAX_DEPOSITORS) throw new ChainError("BAD_REQUEST", `at most ${MAX_DEPOSITORS} depositors per request`);
+    const wallets = new Map<string, PublicKey>();
+    for (const d of depositors) {
+      let pk: PublicKey;
+      try {
+        if (typeof d !== "string") throw new Error("not a string");
+        pk = new PublicKey(d);
+      } catch {
+        throw new ChainError("BAD_REQUEST", "depositors must be valid wallet public keys");
+      }
+      wallets.set(pk.toBase58(), pk);
+    }
     const { pda } = await this.loadBet(betId);
-    const rows = await this.readPositions(pda);
+    const rows = await this.readPositions(pda, [...wallets.values()]);
     return { ok: true, positions: rows.map((r) => ({ wallet: r.pos.owner.toBase58(), side: r.pos.side, amount_base: num(r.pos.amount) })) };
   }
 

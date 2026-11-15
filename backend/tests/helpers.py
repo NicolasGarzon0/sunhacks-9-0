@@ -19,10 +19,18 @@ async def open_bet(market, provider, repo, handle: str = ALICE, team: str = "car
     return [b for b in await repo.list_bets(handle) if b.game_id == game.game_id][-1]
 
 
+async def deposit_known(chain, bet_id, wallet: str, side: int, amount_base: int):
+    """A deposit made straight on the mock chain, outside the API. The API records the depositor in bet_participants
+    before it deposits (that is how the backend knows which positions to read), so tests that bypass it must too."""
+    async with chain.pool.connection() as conn:
+        await conn.execute("insert into bet_participants (bet_id, wallet) values (%s, %s) on conflict do nothing", (bet_id, wallet))
+    return await chain.deposit(bet_id, wallet, side, amount_base)
+
+
 async def deposits(chain, bet_id, rows):
     """rows: (wallet number, side, dollars)."""
     for n, side, usd in rows:
-        await chain.deposit(bet_id, w(n), side, int(usd * USDC))
+        await deposit_known(chain, bet_id, w(n), side, int(usd * USDC))
 
 
 async def force_settle(repo, market, bet_id: str, winning_side: int):

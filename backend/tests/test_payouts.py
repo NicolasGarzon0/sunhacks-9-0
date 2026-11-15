@@ -8,7 +8,7 @@ from markets.chain import ChainError
 from markets.pool_math import compute_payout, settle_amounts
 
 from .conftest import ADMIN_SECRET
-from .helpers import locked_market, sent, w
+from .helpers import deposit_known, locked_market, sent, w
 
 MIN = timedelta(minutes=1)
 SEC = timedelta(seconds=1)
@@ -22,7 +22,7 @@ async def dust_market(market, provider, repo, chain):
 
     bet = await open_bet(market, provider, repo)
     for n, side, amount in DUST_ROWS:
-        await chain.deposit(bet.id, w(n), side, amount)
+        await deposit_known(chain, bet.id, w(n), side, amount)
     return await market.close_funding(bet.id)
 
 

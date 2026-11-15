@@ -17,6 +17,7 @@ from .fake_chain_service import SECRET, FakeChainService
 from .helpers import USDC, w
 
 HOUR = timedelta(hours=1)
+ALL = [w(n) for n in range(1, 6)]  # every wallet the scenarios deposit with
 
 
 class Harness:
@@ -186,11 +187,21 @@ async def test_claims_before_settlement_are_wrong_state(h):
     assert await h.code(h.client.claim(b, w(1))) == "WRONG_STATE"
 
 
+async def test_positions_are_read_for_the_named_depositors_only(h):
+    b, _ = await settled_13(h)
+    assert {p.wallet for p in await h.client.get_positions(b, [w(1), w(99)])} == {w(1)}  # w(99) never deposited
+    assert {p.wallet for p in await h.client.get_positions(b, [w(2), w(2)])} == {w(2)}  # a repeated wallet is read once
+    assert await h.client.get_positions(b, []) == []
+    assert await h.client.get_positions(b, [w(99)]) == []
+    assert await h.code(h.client.get_positions(b, ["not a wallet"])) == "INVALID_WALLET"
+    assert await h.code(h.client.get_positions(str(uuid.uuid4()), [w(1)])) == "NOT_FOUND"
+
+
 async def test_positions_disappear_when_claimed_or_closed_but_totals_stay(h):
     b, _ = await settled_13(h)
-    assert {p.wallet for p in await h.client.get_positions(b)} == {w(1), w(2)}
+    assert {p.wallet for p in await h.client.get_positions(b, ALL)} == {w(1), w(2)}
     await h.client.claim(b, w(2))
-    assert {p.wallet for p in await h.client.get_positions(b)} == {w(1)}
+    assert {p.wallet for p in await h.client.get_positions(b, ALL)} == {w(1)}
     cb = await h.client.get_bet(b)
     assert cb.positions_open == 1 and cb.side_totals == (13 * USDC, 13 * USDC) and cb.participant_count == 2
 
@@ -227,7 +238,7 @@ async def test_close_loser_position_moves_no_money_and_rejects_winners(h):
     assert await h.client.close_loser_position(b, w(1)) is None  # idempotent
     assert (await h.client.get_bet(b)).vault_base == vault
     assert await h.code(h.client.claim(b, w(1))) == "ALREADY_CLAIMED"  # a closed position cannot be claimed
-    assert {p.wallet for p in await h.client.get_positions(b)} == {w(2)}
+    assert {p.wallet for p in await h.client.get_positions(b, ALL)} == {w(2)}
 
 
 async def test_close_loser_position_needs_a_settled_market(h):

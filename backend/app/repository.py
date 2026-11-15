@@ -633,6 +633,20 @@ class Repository:
                 (bet_id, wallet, name),
             )
 
+    async def record_participant(self, bet_id: str, wallet: str) -> None:
+        """Remember that this wallet may hold a position, so the chain read knows which Position PDAs to derive.
+        Called before a deposit is sent (the deposit may land even when the answer is lost). Keeps any display name."""
+        async with self.pool.connection() as conn:
+            await conn.execute(
+                "insert into bet_participants (bet_id, wallet) values (%s, %s) on conflict (bet_id, wallet) do nothing",
+                (bet_id, wallet),
+            )
+
+    async def participant_wallets(self, bet_id: str) -> list[str]:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("select wallet from bet_participants where bet_id = %s order by created_at, wallet", (bet_id,))
+            return [r[0] for r in await cur.fetchall()]
+
     async def display_names(self, bet_id: str) -> dict[str, str]:
         async with self.pool.connection() as conn:
             cur = await conn.execute(

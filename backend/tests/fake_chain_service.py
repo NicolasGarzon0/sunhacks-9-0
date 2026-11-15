@@ -31,6 +31,7 @@ class FakeChainService:
         self.clock = clock
         self.bets: dict[str, dict] = {}
         self.requests: list[httpx.Request] = []
+        self.positions_requests: list[list[str]] = []  # the depositor list of every positions read
         self.payer_sol = 2.0
         self.oracle_sol = 0.5
         self.broken: dict[str, int] = {}  # "METHOD path-suffix" -> remaining failures with HTTP 503
@@ -197,9 +198,16 @@ class FakeChainService:
         bet_id, action = m.group(1), m.group(2)
         if method == "GET" and action is None:
             return self._view(self._bet(bet_id))
-        if method == "GET" and action == "positions":
+        if action == "positions":  # POST with the wallets to read, like the real service (no program scan, no GET)
+            if method != "POST":
+                raise Fail("BAD_REQUEST", "not found", 404)
             b = self._bet(bet_id)
-            return {"positions": [{"wallet": w, "side": p["side"], "amount_base": p["amount"]} for w, p in sorted(b["positions"].items()) if p["open"]]}
+            depositors = body.get("depositors")
+            if not isinstance(depositors, list) or len(depositors) > 1000:
+                raise Fail("BAD_REQUEST", "depositors must be an array of at most 1000 wallets")
+            self.positions_requests.append(list(depositors))
+            wanted = set(depositors)
+            return {"positions": [{"wallet": w, "side": p["side"], "amount_base": p["amount"]} for w, p in sorted(b["positions"].items()) if p["open"] and w in wanted]}
         fn = getattr(self, f"_{action}", None)
         if method != "POST" or fn is None:
             raise Fail("BAD_REQUEST", "not found", 404)

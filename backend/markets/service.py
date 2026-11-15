@@ -351,10 +351,14 @@ class MarketService:
 
     # --- snapshots ---
 
+    async def _positions(self, bet_id: str, wallets: list[str] | None = None) -> list[Position]:
+        """Open chain positions of the wallets the backend knows (participants table), or of `wallets` when given."""
+        return await self.chain.get_positions(bet_id, await self.repo.participant_wallets(bet_id) if wallets is None else wallets)
+
     async def take_snapshot(self, bet_id: str) -> int:
         """Copy the chain's open positions into position_snapshots. Adds and follows top ups, never moves a paid row."""
         try:
-            positions = await self.chain.get_positions(bet_id)
+            positions = await self._positions(bet_id)
         except ChainError as e:
             if e.code == "NOT_FOUND":
                 return 0
@@ -448,6 +452,8 @@ class MarketService:
             },
             "kickoff_utc": _iso(bet.kickoff_utc),
             "funding_closes_at": _iso(bet.funding_closes_at),
+            # the server's clock (ISO UTC, ms): the page offsets its countdown by (server_time - its own clock at fetch)
+            "server_time": self.now().astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "pools": {
                 "side0_base": totals[0], "side1_base": totals[1],
                 "side0_usd": format_usd(totals[0]), "side1_usd": format_usd(totals[1]),
@@ -492,7 +498,7 @@ class MarketService:
             rows = [(x.wallet, x.side, x.amount_base) for x in await self.snapshots_for(bet)]
         else:
             try:
-                positions = await self.chain.get_positions(bet.id) if bet.chain_bet_id else []
+                positions = await self._positions(bet.id) if bet.chain_bet_id else []
             except ChainError as e:
                 if e.code != "NOT_FOUND":
                     raise
@@ -519,7 +525,7 @@ class MarketService:
                "stake_base": None, "stake_usd": None, "payout_base": None, "payout_usd": None, "paid": False}
         if bet.status not in ("locked", "settled", "refunded"):
             cb = await self._chain_view(bet)
-            positions = await self.chain.get_positions(bet.id) if cb else []
+            positions = await self._positions(bet.id, [wallet]) if cb else []
             mine = next((p for p in positions if p.wallet == wallet), None)
             if mine is not None:
                 out.update(has_position=True, side=mine.side, stake_base=mine.amount_base, stake_usd=format_usd(mine.amount_base))
@@ -610,6 +616,9 @@ class MarketService:
         s = self._parse_side(side)
         amount = self._parse_amount(amount_usd)
         name = clean_display_name(display_name) if display_name is not None else None
+        if not is_valid_wallet(wallet):
+            raise ChainError("INVALID_WALLET", "wallet is not a valid public key")
+        await self.repo.record_participant(bet.id, wallet)  # before the deposit, like the real flow
         pos: Position = await self.chain.deposit(bet.id, wallet, s, amount)  # type: ignore[attr-defined]
         self.logger.info("market.deposit", betId=bet.id, wallet=mask_handle(pos.wallet), side=s, amountBase=amount)
         if name is not None:
@@ -621,7 +630,7 @@ class MarketService:
 
     async def admin_view(self, bet: Bet) -> dict:
         cb = await self._chain_view(bet)
-        positions = await self.chain.get_positions(bet.id) if cb else []
+        positions = await self._positions(bet.id) if cb else []
         snapshots = await self.repo.snapshots(bet.id)
         row = {k: (_iso(v) if isinstance(v, datetime) else v) for k, v in bet.__dict__.items()}
         row["proposer_handle"] = mask_handle(bet.proposer_handle)

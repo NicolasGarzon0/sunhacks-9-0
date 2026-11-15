@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/client";
 import type { MarketView, Participant, Position } from "../api/types";
+import { clockOffsetMs } from "../lib/countdown";
 import { isReconnecting, nextDelay } from "../lib/polling";
 
 export interface MarketState {
@@ -10,6 +11,8 @@ export interface MarketState {
   position: Position | null;
   error: { code: string; http: number } | null; // set only when nothing can be shown (invalid / expired / first load failed)
   failures: number;
+  /** server clock minus browser clock (ms), from the latest market response; add it to Date.now() for server time */
+  clockOffset: number;
   reconnecting: boolean;
   loading: boolean;
   refresh: () => void;
@@ -25,6 +28,7 @@ export function useMarket(token: string, wallet: string | null): MarketState {
   const [position, setPosition] = useState<Position | null>(null);
   const [error, setError] = useState<MarketState["error"]>(null);
   const [failures, setFailures] = useState(0);
+  const [clockOffset, setClockOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const walletRef = useRef(wallet);
   const loadRef = useRef<() => void>(() => {});
@@ -42,7 +46,7 @@ export function useMarket(token: string, wallet: string | null): MarketState {
     let status: string | undefined;
     let terminal = false;
     let inflight = false;
-    setMarket(null); setParticipants([]); setPosition(null); setError(null); setFailures(0); setLoading(true);
+    setMarket(null); setParticipants([]); setPosition(null); setError(null); setFailures(0); setClockOffset(0); setLoading(true);
 
     const schedule = () => {
       clearTimeout(timer);
@@ -55,7 +59,9 @@ export function useMarket(token: string, wallet: string | null): MarketState {
       inflight = true;
       clearTimeout(timer);
       try {
+        const sentAt = Date.now();
         const m = await api.market(token);
+        const localAtFetch = (sentAt + Date.now()) / 2; // the server stamped its time somewhere in between
         if (cancelled) return;
         status = m.status;
         fails = 0;
@@ -66,6 +72,7 @@ export function useMarket(token: string, wallet: string | null): MarketState {
         ]);
         if (cancelled) return;
         setMarket(m);
+        setClockOffset(clockOffsetMs(m.server_time, localAtFetch));
         if (parts) setParticipants(parts);
         if (pos) setPosition(pos);
         setError(null); setFailures(0); setLoading(false);
@@ -104,6 +111,9 @@ export function useMarket(token: string, wallet: string | null): MarketState {
   }, [token]);
 
   const refresh = useCallback(() => loadRef.current(), []);
-  const applyMarket = useCallback((m: MarketView) => { setMarket(m); setError(null); }, []);
-  return { market, participants, position, error, failures, reconnecting: isReconnecting(failures) && market !== null, loading, refresh, applyMarket };
+  const applyMarket = useCallback((m: MarketView) => {
+    setMarket(m); setError(null);
+    setClockOffset(clockOffsetMs(m.server_time, Date.now())); // stamped when the response was built, which is just now
+  }, []);
+  return { market, participants, position, error, failures, clockOffset, reconnecting: isReconnecting(failures) && market !== null, loading, refresh, applyMarket };
 }

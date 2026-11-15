@@ -164,16 +164,21 @@ async def test_invalid_wallet_and_side_fail_locally_without_a_request():
 
 
 async def test_positions_close_calls_and_health():
+    seen: list[list[str]] = []
+
     def handler(req):
         p = req.url.path
         if p.endswith("/positions"):
+            assert req.method == "POST"  # the service never scans the program: it needs the wallets to read
+            seen.append(json.loads(req.content)["depositors"])
             return httpx.Response(200, json={"ok": True, "positions": [{"wallet": w(1), "side": 1, "amount_base": 6_000_000}]})
         if p == "/health":
             return httpx.Response(200, json={"ok": True, "payer_sol": 1.5, "oracle_sol": 0.4, "program_id": "P"})
         return httpx.Response(200, json={"ok": True, "already": False})
 
     c, _ = make(handler)
-    [pos] = await c.get_positions(BET)
+    [pos] = await c.get_positions(BET, [w(1), w(2), w(1)])
+    assert seen == [[w(1), w(2)]]  # duplicates dropped, order kept
     assert (pos.wallet, pos.side, pos.amount_base, pos.closed) == (w(1), 1, 6_000_000, False)
     assert await c.close_loser_position(BET, w(1)) is None and await c.close_bet(BET) is None
     assert await c.health() == {"payer_sol": 1.5, "oracle_sol": 0.4, "program_id": "P"}
@@ -184,3 +189,27 @@ async def test_unreadable_responses_are_rpc_errors():
     with pytest.raises(ChainError) as e:
         await c.get_bet(BET)
     assert e.value.code == "RPC_ERROR"
+
+
+async def test_positions_are_requested_in_chunks_of_1000_and_merged():
+    seen: list[int] = []
+
+    def handler(req):
+        wallets = json.loads(req.content)["depositors"]
+        seen.append(len(wallets))
+        return httpx.Response(200, json={"ok": True, "positions": [{"wallet": wallets[0], "side": 0, "amount_base": 1}]})
+
+    c, _ = make(handler)
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"  # base58 has no 0
+    wallets = [f"{alphabet[n // 58]}{alphabet[n % 58]}" + "x" * 40 for n in range(2500)]
+    got = await c.get_positions(BET, wallets)
+    assert seen == [1000, 1000, 500] and [p.wallet for p in got] == [wallets[0], wallets[1000], wallets[2000]]
+
+
+async def test_positions_with_no_depositors_still_asks_once_and_a_bad_wallet_is_refused_without_a_call():
+    calls: list[int] = []
+    c, _ = make(lambda req: (calls.append(1), httpx.Response(200, json={"ok": True, "positions": []}))[1])
+    assert await c.get_positions(BET, []) == [] and calls == [1]
+    with pytest.raises(ChainError) as e:
+        await c.get_positions(BET, ["nope"])
+    assert e.value.code == "INVALID_WALLET" and calls == [1]

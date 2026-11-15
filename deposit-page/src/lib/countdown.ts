@@ -2,6 +2,16 @@ export const CUTOFF_MS = 30_000; // the server refuses deposits in the last 30 s
 
 export type FundingPhase = "open" | "closing" | "closed";
 
+/**
+ * How far the server clock is ahead of this browser's clock (negative: behind), in ms: server_time minus the local time
+ * at fetch. 0 when the server sent no usable time, so the page degrades to the browser clock.
+ */
+export function clockOffsetMs(serverTime: string | undefined, localAtFetchMs: number): number {
+  if (!serverTime) return 0;
+  const t = Date.parse(serverTime);
+  return Number.isNaN(t) ? 0 : t - localAtFetchMs;
+}
+
 export function msLeft(iso: string, now: number): number {
   const t = Date.parse(iso);
   return Number.isNaN(t) ? 0 : t - now;

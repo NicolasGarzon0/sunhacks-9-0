@@ -20,7 +20,7 @@ const ANNOUNCE: Partial<Record<ViewName, string>> = {
 export function BetPage({ token }: { token: string }) {
   const wallet = useWallet();
   const m = useMarket(token, wallet.address);
-  const now = useNow();
+  const now = useNow() + m.clockOffset; // server time: the countdown must not depend on a wrong browser clock
   const [announce, setAnnounce] = useState("");
 
   const terminal = m.error && (m.error.http === 404 || m.error.http === 410);

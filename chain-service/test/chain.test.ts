@@ -13,7 +13,7 @@ test("trust check: wrong authority, payer, treasury or mint is UNTRUSTED_BET on 
     const s = setup();
     await putBet(s, { ...over, state: "locked" });
     assert.equal(await code(s.chain.getBet(BET_ID)), "UNTRUSTED_BET", JSON.stringify(Object.keys(over)));
-    assert.equal(await code(s.chain.positions(BET_ID)), "UNTRUSTED_BET");
+    assert.equal(await code(s.chain.positions(BET_ID, [])), "UNTRUSTED_BET");
     assert.equal(await code(s.chain.lock(BET_ID)), "UNTRUSTED_BET");
     assert.equal(await code(s.chain.settle(BET_ID, 1)), "UNTRUSTED_BET");
     assert.equal(await code(s.chain.refundAll(BET_ID)), "UNTRUSTED_BET");
@@ -219,17 +219,92 @@ test("close_bet: needs settled or refunded and no open positions; oracle signs; 
 });
 
 // ---------- positions ----------
-test("positions: lists only this bet's positions via the dataSize + memcmp(offset 8) filter", async () => {
+test("positions: reads only the named depositors' PDAs for this bet, in getMultipleAccounts batches", async () => {
   const s = setup();
-  const a = Keypair.generate().publicKey, b = Keypair.generate().publicKey;
-  await putBet(s); await putBet(s, {}, "11111111-2222-4333-8444-555555555555");
+  const a = Keypair.generate().publicKey, b = Keypair.generate().publicKey, nobody = Keypair.generate().publicKey;
+  const other = "11111111-2222-4333-8444-555555555555";
+  await putBet(s); await putBet(s, {}, other);
   await putPosition(s, a, 0, 5n * USDC); await putPosition(s, b, 1, 6n * USDC);
-  await putPosition(s, Keypair.generate().publicKey, 1, 9n * USDC, "11111111-2222-4333-8444-555555555555");
-  const r: any = await s.chain.positions(BET_ID);
+  await putPosition(s, nobody, 1, 9n * USDC, other); // same wallet, another bet: not this bet's position
+  const r: any = await s.chain.positions(BET_ID, [a, b, nobody].map((k) => k.toBase58()));
   assert.equal(r.positions.length, 2);
   const byWallet = Object.fromEntries(r.positions.map((p: any) => [p.wallet, p]));
   assert.deepEqual(byWallet[a.toBase58()], { wallet: a.toBase58(), side: 0, amount_base: 5_000_000 });
   assert.deepEqual(byWallet[b.toBase58()], { wallet: b.toBase58(), side: 1, amount_base: 6_000_000 });
+  assert.deepEqual(s.rpc.multipleReads, [3]);
+});
+
+test("positions: only wallets that are named are returned (a position of an unnamed wallet is not found)", async () => {
+  const s = setup();
+  const a = Keypair.generate().publicKey, b = Keypair.generate().publicKey;
+  await putBet(s); await putPosition(s, a, 0, 5n * USDC); await putPosition(s, b, 1, 6n * USDC);
+  const r: any = await s.chain.positions(BET_ID, [a.toBase58(), a.toBase58()]); // duplicates are read once
+  assert.deepEqual(r.positions.map((p: any) => p.wallet), [a.toBase58()]);
+  assert.deepEqual(s.rpc.multipleReads, [1]);
+  assert.deepEqual(((await s.chain.positions(BET_ID, [])) as any).positions, []);
+});
+
+test("positions: more than 100 wallets are read in batches of at most 100, sorted by wallet", async () => {
+  const s = setup();
+  await putBet(s);
+  const wallets = Array.from({ length: 250 }, () => Keypair.generate().publicKey);
+  for (const w of wallets.filter((_, i) => i % 50 === 0)) await putPosition(s, w, 1, USDC); // 5 of them hold a position
+  const r: any = await s.chain.positions(BET_ID, wallets.map((w) => w.toBase58()));
+  assert.equal(r.positions.length, 5);
+  assert.deepEqual(s.rpc.multipleReads, [100, 100, 50]);
+  const names = r.positions.map((p: any) => p.wallet);
+  assert.deepEqual(names, [...names].sort((x: string, y: string) => x.localeCompare(y)));
+});
+
+test("positions: a closed (missing) or foreign account is skipped; bad input and untrusted bets are refused", async () => {
+  const s = setup();
+  const a = Keypair.generate().publicKey, gone = Keypair.generate().publicKey, fake = Keypair.generate().publicKey;
+  await putBet(s); await putPosition(s, a, 0, USDC);
+  const key = await putPosition(s, fake, 1, USDC);
+  s.rpc.accounts.set(key.toBase58(), { ...s.rpc.accounts.get(key.toBase58())!, owner: Keypair.generate().publicKey }); // not owned by the program
+  const r: any = await s.chain.positions(BET_ID, [a, gone, fake].map((k) => k.toBase58()));
+  assert.deepEqual(r.positions.map((p: any) => p.wallet), [a.toBase58()]);
+  assert.equal(await code(s.chain.positions(BET_ID, undefined)), "BAD_REQUEST");
+  assert.equal(await code(s.chain.positions(BET_ID, ["not a key"])), "BAD_REQUEST");
+  assert.equal(await code(s.chain.positions(BET_ID, [42])), "BAD_REQUEST");
+  assert.equal(await code(s.chain.positions(BET_ID, Array.from({ length: 1001 }, () => a.toBase58()))), "BAD_REQUEST");
+  assert.equal(await code(s.chain.positions("11111111-2222-4333-8444-999999999999", [a.toBase58()])), "NOT_FOUND");
+});
+
+test("positions and deposit rule checks never call getProgramAccounts (spy on the RPC client)", async () => {
+  const calls: string[] = [];
+
+  const s = setup();
+  // a real ConnectionRpc over a Connection stand-in: any getProgramAccounts call is recorded and fails the test
+  const conn: any = new Proxy({}, {
+    get: (_t, name: string) => {
+      if (name === "getProgramAccounts") return () => { calls.push("getProgramAccounts"); throw new Error("getProgramAccounts must never be called"); };
+      if (name === "getMultipleAccountsInfo") return async (keys: unknown[]) => { calls.push(`getMultipleAccountsInfo:${keys.length}`); return keys.map(() => null); };
+      if (name === "getAccountInfo") return async (pk: { toBase58(): string }) => { calls.push("getAccountInfo"); const a = s.rpc.accounts.get(pk.toBase58()); return a ?? null; };
+      if (name === "getTokenAccountBalance") return async () => ({ value: { amount: "0" } });
+      return undefined;
+    },
+  });
+  const { ConnectionRpc } = await import("../src/rpc.ts");
+  const { ChainService } = await import("../src/chain.ts");
+  const { createLogger } = await import("../src/logger.ts");
+  const rpc = new ConnectionRpc(conn);
+  const chain = new ChainService({ rpc, cfg: s.cfg, logger: createLogger({ level: "error", write: () => {} }) });
+  await putBet(s);
+  const ws = Array.from({ length: 150 }, () => Keypair.generate().publicKey.toBase58());
+  const r: any = await chain.positions(BET_ID, ws);
+  assert.deepEqual(r.positions, []);
+  assert.deepEqual(calls.filter((c) => c.startsWith("getMultipleAccountsInfo")), ["getMultipleAccountsInfo:100", "getMultipleAccountsInfo:50"]);
+  assert.ok(!calls.includes("getProgramAccounts"));
+
+});
+
+test("the Rpc interface has no getProgramAccounts at all, and no source file calls it", async () => {
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = new URL("../src/", import.meta.url).pathname;
+  for (const f of readdirSync(root)) assert.ok(!readFileSync(join(root, f), "utf8").includes("getProgramAccounts"), `${f} mentions getProgramAccounts`);
+  assert.equal(typeof (setup().rpc as any).getProgramAccounts, "undefined");
 });
 
 test("logs carry bet id, instruction and signature, never key material", async () => {

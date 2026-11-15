@@ -6,7 +6,7 @@ import type { WalletService } from "./wallet.ts";
 import { ChainError, httpStatus, toChainError } from "./errors.ts";
 import type { Logger } from "./logger.ts";
 
-const MAX_BODY = 16 * 1024;
+const MAX_BODY = 64 * 1024; // a positions request may name up to 1000 wallets
 const sha = (s: string) => createHash("sha256").update(s).digest();
 export const secretMatches = (given: string | undefined, expected: string): boolean => given !== undefined && timingSafeEqual(sha(given), sha(expected));
 
@@ -116,9 +116,9 @@ export function createServer(deps: ServerDeps): http.Server {
       if (m) {
         const id = m[1]!, action = m[2];
         if (req.method === "GET" && !action) return send(async () => ({ ok: true, ...(await chain.getBet(id)) }));
-        if (req.method === "GET" && action === "positions") return send(() => chain.positions(id));
         if (req.method === "POST") {
           switch (action) {
+            case "positions": return send(() => chain.positions(id, body.depositors));
             case "lock": return send(() => chain.lock(id));
             case "settle": return send(() => chain.settle(id, intField(body, "winning_side")));
             case "refund_all": return send(() => chain.refundAll(id));

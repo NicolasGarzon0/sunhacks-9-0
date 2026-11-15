@@ -86,7 +86,7 @@ class DepositFlow:
         self._check_amount(bet, amount)
         built = await self.chain.deposit_build(bet.id, w, s, amount)
         cb = await self.chain.get_bet(bet.id)
-        existing = next((p.amount_base for p in await self.chain.get_positions(bet.id) if p.wallet == w and p.side == s), 0)
+        existing = next((p.amount_base for p in await self.chain.get_positions(bet.id, [w]) if p.wallet == w and p.side == s), 0)
         fee_bps = bet.fee_bps or 0
         payout = preview_payout_for_deposit(cb.side_totals, s, amount, fee_bps, existing_stake=existing)
         after = list(cb.side_totals)
@@ -121,6 +121,7 @@ class DepositFlow:
                 raise MarketError("BAD_REQUEST", f"{label} must be a base64 string")
         if signed_tx_b64 is None and (message_b64 is None or user_signature_b64 is None):
             raise MarketError("BAD_REQUEST", "send signed_tx_b64, or message_b64 together with user_signature_b64")
+        await self.m.repo.record_participant(bet.id, w)  # before sending: the deposit may land even if the answer is lost
         done = await self.chain.deposit_submit(
             bet.id, w, s, amount, signed_tx_b64=signed_tx_b64, message_b64=message_b64, user_signature_b64=user_signature_b64  # type: ignore[arg-type]
         )

@@ -111,7 +111,7 @@ async def test_participants_and_position_in_every_status(client, market, provide
     _, pos = await get(client, t, "/position", wallet=w(3))
     assert pos["paid"] is True and pos["payout_base"] == 13_166_666
     # the claimed position is gone from the chain, but the link view still lists it (from the snapshot)
-    assert w(3) not in {p.wallet for p in await chain.get_positions(bet.id)}
+    assert w(3) not in {p.wallet for p in await chain.get_positions(bet.id, [w(1), w(2), w(3)])}
     code, listing = await get(client, t, "/participants")
     assert code == 200 and {p["wallet"] for p in listing["participants"]} == {w(1), w(2), w(3)}
     # a refunded market pays stakes back
@@ -328,3 +328,23 @@ async def test_only_malformed_input_is_400_and_every_other_chain_error_stays_409
     for body, status, code in cases:
         s, e = await post(client, token, "/deposits", body)
         assert (s, e["code"]) == (status, code), body
+
+
+async def test_view_carries_the_server_time_as_iso_utc_in_every_status(client, mk, market, provider, repo, chain, clock):
+    from datetime import datetime, timezone
+
+    bet, token = mk
+    _, v = await get(client, token)
+    assert v["server_time"] == clock().astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    assert v["server_time"].endswith("Z") and "+" not in v["server_time"]
+    assert datetime.fromisoformat(v["server_time"].replace("Z", "+00:00")).utcoffset() == timedelta(0)
+    # it is the live clock, not a stored value: moving the clock moves it
+    before = datetime.fromisoformat(v["server_time"].replace("Z", "+00:00"))
+    clock.current = clock.current + timedelta(seconds=90)
+    _, later = await get(client, token)
+    assert datetime.fromisoformat(later["server_time"].replace("Z", "+00:00")) - before == timedelta(seconds=90)
+    # and every status has it, so the page can always offset its clock
+    await deposits(chain, bet.id, [(1, 0, 10), (2, 1, 10)])
+    await market.close_funding(bet.id)
+    _, locked = await get(client, token)
+    assert locked["status"] == "locked" and locked["server_time"]

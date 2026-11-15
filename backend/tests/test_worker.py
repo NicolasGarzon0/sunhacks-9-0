@@ -11,7 +11,7 @@ import pytest
 from games.provider import ProviderError
 from markets.worker import LOCK_KEY
 
-from .helpers import ALICE, deposits, locked_market, open_bet, sent, w
+from .helpers import deposit_known, ALICE, deposits, locked_market, open_bet, sent, w
 
 MIN = timedelta(minutes=1)
 
@@ -53,8 +53,8 @@ async def test_deadline_with_one_side_refunds_with_the_chunk_4_text_and_refund_t
 async def test_early_close_when_the_market_fills_without_waiting_for_the_deadline(worker, market, provider, repo, chain, fake_gateway):
     market.settings = replace(market.settings, max_participants=2)
     bet = await open_bet(market, provider, repo)
-    await chain.deposit(bet.id, w(1), 0, 5_000_000)
-    await chain.deposit(bet.id, w(2), 1, 5_000_000)  # a real deposit made outside the API: nothing closed it yet
+    await deposit_known(chain, bet.id, w(1), 0, 5_000_000)
+    await deposit_known(chain, bet.id, w(2), 1, 5_000_000)  # a real deposit made outside the API: nothing closed it yet
     assert (await repo.get_bet(bet.id)).status == "open"
     await worker.tick()
     assert (await repo.get_bet(bet.id)).status == "locked" and len(sent(fake_gateway, ":locked")) == 1

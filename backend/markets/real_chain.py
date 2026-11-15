@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Sequence
 
 import httpx
 
 from .chain import ERROR_CODES, BetParams, ChainBet, ChainError, Claim, Position, is_valid_wallet
 
+MAX_DEPOSITORS_PER_CALL = 1000  # the chain service refuses more wallets than this in one request
 RETRY_STATUS = {429, 502, 503, 504}
 CODE_MAP = {"BAD_REQUEST": "INVALID_PARAMS", "UNAUTHORIZED": "RPC_ERROR"}  # service codes the backend has no twin for
 
@@ -116,12 +117,21 @@ class RealChainClient:
     async def get_bet(self, bet_id: str) -> ChainBet:
         return _chain_bet(bet_id, await self._call("GET", f"/bets/{bet_id}"))
 
-    async def get_positions(self, bet_id: str) -> list[Position]:
-        d = await self._call("GET", f"/bets/{bet_id}/positions")
-        return [
-            Position(bet_id, p["wallet"], int(p["side"]), int(p["amount_base"]), claimed=False, payout_base=0, closed=False)
-            for p in d["positions"]
-        ]
+    async def get_positions(self, bet_id: str, depositors: Sequence[str]) -> list[Position]:
+        """POSTs the wallets to read: the service derives their Position PDAs and batch-reads them (no program scan).
+        A read, so safe to retry. Duplicates are dropped; the service caps one request at 1000 wallets."""
+        wallets = list(dict.fromkeys(depositors))
+        for w in wallets:
+            if not is_valid_wallet(w):
+                raise ChainError("INVALID_WALLET", "depositor is not a valid public key")
+        out: list[Position] = []
+        for i in range(0, max(len(wallets), 1), MAX_DEPOSITORS_PER_CALL):  # an empty list still asks once (unknown bet is NOT_FOUND)
+            d = await self._call("POST", f"/bets/{bet_id}/positions", {"depositors": wallets[i:i + MAX_DEPOSITORS_PER_CALL]})
+            out += [
+                Position(bet_id, p["wallet"], int(p["side"]), int(p["amount_base"]), claimed=False, payout_base=0, closed=False)
+                for p in d["positions"]
+            ]
+        return out
 
     async def lock(self, bet_id: str) -> ChainBet:
         return _chain_bet(bet_id, await self._call("POST", f"/bets/{bet_id}/lock", {}, write=True))
