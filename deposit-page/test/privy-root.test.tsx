@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // A tiny fake of the Privy SDK: state in a store so hooks re-render like the real ones.
 const sdk = vi.hoisted(() => {
   const s = {
-    ready: true, authenticated: false, wallets: [] as { address: string }[],
+    ready: true, authenticated: false, wallets: [] as { address: string }[], user: null as null | { linkedAccounts: Record<string, unknown>[] },
     login: vi.fn<(o?: unknown) => void>(),
     logout: vi.fn<() => Promise<void>>(),
     signTransaction: vi.fn<(i: unknown) => Promise<unknown>>(),
@@ -30,7 +30,7 @@ vi.mock("@privy-io/react-auth", async () => {
       sdk.s.providerProps = p;
       return p.children;
     },
-    usePrivy: () => { use(); return { ready: sdk.s.ready, authenticated: sdk.s.authenticated }; },
+    usePrivy: () => { use(); return { ready: sdk.s.ready, authenticated: sdk.s.authenticated, user: sdk.s.user }; },
     useLogin: (cb: { onError?: (e: unknown) => void }) => { use(); sdk.s.onError = cb?.onError ?? null; return { login: (o?: unknown) => sdk.s.login(o) }; },
     useLogout: () => ({ logout: () => sdk.s.logout() }),
   };
@@ -70,7 +70,7 @@ beforeEach(() => {
   sdk.s.logout = vi.fn<() => Promise<void>>(async () => { sdk.set({ authenticated: false, wallets: [] }); });
   sdk.s.signTransaction = vi.fn<(i: unknown) => Promise<unknown>>();
   sdk.s.providerProps = null;
-  sdk.s.ready = true; sdk.s.authenticated = false; sdk.s.wallets = [];
+  sdk.s.ready = true; sdk.s.authenticated = false; sdk.s.wallets = []; sdk.s.user = null; sdk.s.onError = null;
 });
 
 function mount(extra: { appId?: string; clientId?: string } = {}) {
@@ -157,6 +157,52 @@ describe("PrivyRoot", () => {
     mount();
     await waitFor(() => expect(screen.getByTestId("addr")).toHaveTextContent(ADDR));
     expect(sdk.s.login).not.toHaveBeenCalled();
+  });
+
+  describe("embedded wallet missing from the SDK wallet list", () => {
+    const privyUser = (address: string) => ({ linkedAccounts: [
+      { type: "email", address: "a@b.co" },
+      { type: "wallet", chainType: "ethereum", walletClientType: "privy", address: "0xabc" },
+      { type: "wallet", chainType: "solana", walletClientType: "privy", address },
+    ] });
+
+    it("uses the address on the Privy user when a restored session has an empty wallet list", async () => {
+      sdk.s.authenticated = true; sdk.s.wallets = []; sdk.s.user = privyUser(ADDR);
+      const provider = mount();
+      await waitFor(() => expect(screen.getByTestId("addr")).toHaveTextContent(ADDR));
+      expect(provider.ready).toBe(true);
+      await expect(provider.connect()).resolves.toBeUndefined();
+    });
+
+    it("finishes a fresh login from the user record, with no wallet creation timeout, even if the list stays empty", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const provider = mount();
+        const done = provider.connect();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(sdk.s.login).toHaveBeenCalledTimes(1);
+        sdk.set({ authenticated: true, user: privyUser(ADDR) }); // wallets stays []
+        await expect(done).resolves.toBeUndefined();
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(screen.getByTestId("err")).toHaveTextContent("");
+        expect(screen.getByTestId("addr")).toHaveTextContent(ADDR);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it("signing without a wallet object from the SDK is a plain wallet error, not a network error", async () => {
+      sdk.s.authenticated = true; sdk.s.wallets = []; sdk.s.user = privyUser(ADDR);
+      const provider = mount();
+      await waitFor(() => expect(provider.ready).toBe(true));
+      // reaches the bridge only after the safety checks; use a real tx so they pass
+      const seed = ed.utils.randomSecretKey();
+      const pub = await ed.getPublicKeyAsync(seed);
+      const message = new Uint8Array([2, 0, 1, 3, ...new Uint8Array(32).fill(7), ...pub, ...new Uint8Array(32).fill(9), ...new Uint8Array(32).fill(5), 0]);
+      const wire = new Uint8Array([2, ...new Uint8Array(128), ...message]);
+      sdk.set({ user: privyUser(base58Encode(pub)) });
+      await waitFor(() => expect(provider.address).toBe(base58Encode(pub)));
+      await expect(provider.signDeposit(toBase64(wire), toBase64(message))).rejects.toMatchObject({ code: "WALLET" });
+      expect(sdk.s.signTransaction).not.toHaveBeenCalled();
+    });
   });
 
   it("shows plain copy when the login screen is closed", async () => {
