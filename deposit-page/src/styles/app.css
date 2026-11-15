@@ -179,12 +179,8 @@ a:hover { text-decoration-color: var(--text); }
 .error-box::before { content: "Error: "; font-weight: 600; color: var(--bad); }
 .banner { position: sticky; top: 0; z-index: 5; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); color: var(--text); text-align: center; padding: calc(8px + var(--safe-top)) 12px 8px; font-size: 14px; }
 
-.progress ol { list-style: none; display: grid; gap: 8px; padding: 0; margin: 16px 0 0; }
-.progress li { color: var(--muted); font-size: 14px; }
-.progress li.now { color: var(--text); font-weight: 500; }
-.progress li.now::after { content: "…"; }
-.progress li.done { color: var(--text); }
-.progress li.done::after { content: " ✓"; color: var(--good); }
+/* The step list is not shown, but stays in the page for screen readers (live region). */
+.progress ol { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; padding: 0; list-style: none; }
 
 .success { display: grid; gap: 10px; justify-items: start; }
 .success h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.04em; margin: 0; }
