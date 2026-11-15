@@ -14,7 +14,7 @@ export function privyConfig() {
       showWalletUIs: false,
     },
     externalWallets: { disableAllExternalWallets: true },
-    appearance: { walletChainType: "solana-only" as const },
+    appearance: { walletChainType: "solana-only" as const, theme: "dark" as const, accentColor: "#FFFFFF" as const, logo: "/wordmark.svg" },
   };
 }
 
