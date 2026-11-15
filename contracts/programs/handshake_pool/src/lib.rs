@@ -9,7 +9,7 @@ use anchor_lang::prelude::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("HmgmQJP136sLcH1gQDywG7MeUX9xZN6wZMDdzsgf9X1c");
+declare_id!("38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE");
 
 #[program]
 pub mod handshake_pool {

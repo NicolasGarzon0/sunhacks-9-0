@@ -1,0 +1,16 @@
+{
+  "cluster": "devnet",
+  "rpcDefault": "https://api.devnet.solana.com",
+  "decimals": 6,
+  "keys": {
+    "payer": "CQ8CX6unDrykKKVnH7CdSTFYnXdXJik62AWFN6pwaGno",
+    "oracle": "BQjLryB6hpNEHyhfoUaS3udB7qjUgxZU5i5vYUhc6B5C",
+    "treasury": "GiAL8s2at8zKmsMqisRVpzuaciJfL1c7R7tcfzg4ejjC",
+    "mintAuthority": "EsZkQiLxsyZpLmSK5NhbjSxUso4AXiiUF4nmEMcHnXSV",
+    "upgradeAuthority": "FuM9CDCfV1ZfjVH9XsxYntfEdcTiHQ5FbcX8RjUPixrC",
+    "program": "38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE"
+  },
+  "programId": "38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE",
+  "deploySignature": "3pxuDLBB6yHPikzQ1kGpXFtxTQHKpDvF7EdhFXdAjvujsYpDLHJTE9hkTh8YE2uQy1nPyy6nFJujFKsjJkExVSs5",
+  "testUsdcMint": "DBR7ojMEASwJAZbY5QZEML6gPbG3QqxiJfuspGZanBqM"
+}

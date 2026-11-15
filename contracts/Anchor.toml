@@ -8,20 +8,22 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-handshake_pool = "HmgmQJP136sLcH1gQDywG7MeUX9xZN6wZMDdzsgf9X1c"
+handshake_pool = "38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE"
+
+[programs.devnet]
+handshake_pool = "38PFJW13NmRcfKqCj5DgSkwPgCbP68itZQm9nz7eCFAE"
 
 [provider]
 cluster = "localnet"
-# throwaway wallet, gitignored; generated with solana-keygen, never printed
-wallet = ".keys/test-wallet.json"
+wallet = "~/Codes/Hackathons/SunHacks_9.0/contracts/.keys/test-wallet.json"
 
 [scripts]
-# NOTE: build with `anchor build --arch v0` (see README): the default SBPF v3 is rejected by solana-test-validator 3.1.14
-# LiteSVM suite (fast, can move the clock) and the validator smoke test
 test = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests-validator/**/*.test.ts\""
 test-litesvm = "npx ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.test.ts\""
 
+[hooks]
+
 [test]
 startup_wait = 20000
-
-[hooks]
+shutdown_wait = 2000
+upgradeable = false
